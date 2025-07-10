@@ -6,7 +6,7 @@ from scipy.signal import find_peaks
 import subprocess
 import os
 import glob
-from database_manager import DatabaseManager
+from database.database_manager import DatabaseManager
 
 # Configuration
 MATCH_DIR = 'match_directory'  # Directory containing full wrestling videos
@@ -20,9 +20,9 @@ def process_video(video_path: str, output_dir: str, db_manager: DatabaseManager,
         # Log processing start
         db_manager.log_processing(video_id, "motion_detection", "started")
 
-# setup
+        # setup
         cap = cv2.VideoCapture(video_path)
-fps = cap.get(cv2.CAP_PROP_FPS)
+        fps = cap.get(cv2.CAP_PROP_FPS)
         
         if not cap.isOpened():
             error_msg = f"Could not open video {video_path}"
@@ -32,32 +32,32 @@ fps = cap.get(cv2.CAP_PROP_FPS)
         
         print(f"📊 Video FPS: {fps}")
 
-# MOTION SCORE CALCULATION **********
-motion_scores = []
-prev_gray = None
+        # MOTION SCORE CALCULATION **********
+        motion_scores = []
+        prev_gray = None
         frame_count = 0
 
         print("🔄 Analyzing motion...")
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    if prev_gray is not None:
-        diff = cv2.absdiff(gray, prev_gray)
-        motion_score = np.sum(diff)
-        motion_scores.append(motion_score)
+            if prev_gray is not None:
+                diff = cv2.absdiff(gray, prev_gray)
+                motion_score = np.sum(diff)
+                motion_scores.append(motion_score)
 
-    prev_gray = gray
+            prev_gray = gray
             frame_count += 1
             
             # Progress indicator
             if frame_count % 1000 == 0:
                 print(f"   Processed {frame_count} frames...")
 
-cap.release()
+        cap.release()
         
         if len(motion_scores) == 0:
             error_msg = f"No motion data extracted from {video_path}"
@@ -65,66 +65,66 @@ cap.release()
             print(f"❌ {error_msg}")
             return
         
-# smooth the motion scores
-smoothed = scipy.ndimage.gaussian_filter1d(motion_scores, sigma=5)
+        # smooth the motion scores
+        smoothed = scipy.ndimage.gaussian_filter1d(motion_scores, sigma=5)
 
-# DETECT PEAKS **********
-peaks, _ = find_peaks(smoothed, distance=fps*2, height=(np.mean(smoothed)))  # tune this if too many/too few
+        # DETECT PEAKS **********
+        peaks, _ = find_peaks(smoothed, distance=fps*2, height=(np.mean(smoothed)))  # tune this if too many/too few
 
-# create 5-sec windows around each peak
-clip_ranges = []
-clip_duration = 2.5  # seconds before and after
+        # create 5-sec windows around each peak
+        clip_ranges = []
+        clip_duration = 2.5  # seconds before and after
 
-for peak in peaks:
-    peak_time = peak / fps
-    start = max(0, peak_time - clip_duration)
-    end = peak_time + clip_duration
-    clip_ranges.append((start, end))
+        for peak in peaks:
+            peak_time = peak / fps
+            start = max(0, peak_time - clip_duration)
+            end = peak_time + clip_duration
+            clip_ranges.append((start, end))
 
-# printing clip time ranges
+        # printing clip time ranges
         print(f"🎯 Found {len(clip_ranges)} potential highlights:")
-for i, (start, end) in enumerate(clip_ranges):
+        for i, (start, end) in enumerate(clip_ranges):
             print(f"   Clip {i+1}: {start:.2f}s → {end:.2f}s")
 
-# CREATE HIGHLIGHT CLIPS **********
+        # CREATE HIGHLIGHT CLIPS **********
         video_name = os.path.splitext(os.path.basename(video_path))[0]
 
         print(f"\n🎬 Creating {len(clip_ranges)} highlight clips...")
         clips_created = 0
 
-for i, (start, end) in enumerate(clip_ranges):
+        for i, (start, end) in enumerate(clip_ranges):
             output_filename = f'{video_name}_highlight_{i+1}.mp4'
             output_path = os.path.join(output_dir, output_filename)
             print(f"   Creating clip {i+1}/{len(clip_ranges)}: {start:.2f}s → {end:.2f}s")
     
-    # Use proper encoding instead of fast copy
-    cmd = [
-        'ffmpeg',
-        '-y',  # overwrite output
+            # Use proper encoding instead of fast copy
+            cmd = [
+                'ffmpeg',
+                '-y',  # overwrite output
                 '-i', video_path,
-        '-ss', f'{start:.2f}',
-        '-to', f'{end:.2f}',
-        '-c:v', 'libx264',           # H.264 video codec
-        '-profile:v', 'baseline',     # Most compatible profile
-        '-level', '3.0',              # Standard level
-        '-preset', 'fast',            # Fast encoding
-        '-crf', '23',                 # Good quality
-        '-c:a', 'aac',                # AAC audio codec
-        '-b:a', '128k',               # Audio bitrate
-        '-movflags', '+faststart',    # Optimize for web streaming
-        '-pix_fmt', 'yuv420p',        # Standard pixel format
-        output_path
-    ]
+                '-ss', f'{start:.2f}',
+                '-to', f'{end:.2f}',
+                '-c:v', 'libx264',           # H.264 video codec
+                '-profile:v', 'baseline',     # Most compatible profile
+                '-level', '3.0',              # Standard level
+                '-preset', 'fast',            # Fast encoding
+                '-crf', '23',                 # Good quality
+                '-c:a', 'aac',                # AAC audio codec
+                '-b:a', '128k',               # Audio bitrate
+                '-movflags', '+faststart',    # Optimize for web streaming
+                '-pix_fmt', 'yuv420p',        # Standard pixel format
+                output_path
+            ]
     
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode == 0:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
                 print(f"   ✓ Created {output_filename}")
                 
                 # Add clip to database
                 motion_score = smoothed[peaks[i]] if i < len(peaks) else None
                 db_manager.add_clip(video_id, output_filename, output_path, start, end, motion_score)
                 clips_created += 1
-    else:
+            else:
                 print(f"   ✗ Failed to create {output_filename}")
                 print(f"   Error: {result.stderr}")
 

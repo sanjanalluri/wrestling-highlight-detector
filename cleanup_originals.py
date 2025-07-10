@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-Utility to safely remove original videos after processing.
-This script checks that videos have been processed and clips exist before deletion.
+Clean up original videos after processing
+This script helps manage storage by removing original videos after clips have been generated
 """
 
 import os
-import glob
-from database_manager import DatabaseManager
+from database.database_manager import DatabaseManager
 
 def cleanup_original_videos():
     """Remove original videos that have been processed and have clips"""
@@ -87,8 +86,8 @@ def show_storage_info():
     
     # Check unlabeled_clips directory size
     if os.path.exists('unlabeled_clips'):
-        clip_files = glob.glob('unlabeled_clips/*.mp4')
-        clip_size = sum(os.path.getsize(f) for f in clip_files)
+        clip_files = os.listdir('unlabeled_clips')
+        clip_size = sum(os.path.getsize(os.path.join('unlabeled_clips', f)) for f in clip_files)
         clip_size_mb = clip_size / (1024 * 1024)
         print(f"   Clips directory size: {clip_size_mb:.1f} MB")
 

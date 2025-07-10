@@ -75,4 +75,4 @@ if __name__ == "__main__":
     show_summary()
     
     print(f"\n💡 To open in DB Browser for SQLite:")
-    print(f"   open -a 'DB Browser for SQLite' wrestling_pipeline.db") 
+    print(f"   open -a 'DB Browser for SQLite' database/wrestling_pipeline.db") 

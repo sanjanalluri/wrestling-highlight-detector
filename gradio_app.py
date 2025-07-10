@@ -6,11 +6,10 @@ import os
 import random
 import pandas as pd
 from datetime import datetime
-from database_manager import DatabaseManager
+from database.database_manager import DatabaseManager
 
 # Config
 CLIP_DIR = "unlabeled_clips"  # Use new properly encoded clips
-LABEL_FILE = "labels.csv"
 GUIDANCE_TEXT = """
 ## What is a HIGHLIGHT?
 

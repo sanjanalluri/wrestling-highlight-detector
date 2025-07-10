@@ -1,265 +1,137 @@
-# Wrestling Highlight Detector
+# WrestleAI Highlight Detector
 
-A comprehensive wrestling highlight detection and labeling system using computer vision, motion analysis, and machine learning. The system automatically extracts potential highlights from full wrestling videos and provides a web-based interface for human labeling.
+An AI-powered tool for detecting and labeling wrestling match highlights using motion detection and machine learning.
 
-## 🚀 Features
+## Features
 
-- **🎬 Automatic Highlight Detection**: Motion analysis to extract potential highlights from full wrestling videos
-- **🗄️ Database-Driven Pipeline**: SQLite database for tracking videos, clips, labels, and processing history
-- **🌐 Web-based Labeling Interface**: Gradio-powered UI for collaborative labeling
-- **📊 Progress Tracking**: Real-time statistics and progress monitoring
-- **🔄 Incremental Processing**: Only process new videos, preserve existing work
-- **👥 Multi-Labeler Support**: Track multiple labelers with their decisions
-- **💾 Persistent Storage**: All data stored in SQLite database with backup capabilities
-- **🎯 Three Labeling Options**: Highlight, Not Highlight, Unsure
-- **🔍 Database Visualization**: Built-in tools to view and analyze your data
+- **Motion Detection**: Automatically extracts potential highlight moments from wrestling videos
+- **Web-based Labeling**: Easy-to-use interface for labeling clips as highlights or not
+- **Database Management**: Persistent storage of video metadata and labels
+- **Progress Tracking**: Real-time statistics on labeling progress
 
-## 📁 Project Structure
+## Quick Start
+
+### Local Development
+
+1. **Setup Environment**:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+2. **Add Videos**:
+   - Place wrestling videos in the `match_directory/` folder
+   - Supported formats: MP4, AVI, MOV, MKV, WMV
+
+3. **Process Videos**:
+   ```bash
+   python motion_detection.py
+   ```
+
+4. **Start Labeling**:
+   ```bash
+   python gradio_app.py
+   ```
+   - Open your browser to the provided URL
+   - Enter your name and start labeling clips
+
+## Deployment Options
+
+### Option 1: Hugging Face Spaces (Recommended)
+
+**Free, permanent hosting with automatic deployment**
+
+1. **Create a Hugging Face account** at [huggingface.co](https://huggingface.co)
+
+2. **Create a new Space**:
+   - Go to your profile → "New Space"
+   - Choose "Gradio" as the SDK
+   - Name it something like `wrestling-highlight-detector`
+
+3. **Upload your files**:
+   - `app.py` (use the deployment version I created)
+   - `requirements.txt`
+   - `database/` folder with all database files
+   - Your `unlabeled_clips/` folder with processed videos
+   - Your `database/wrestling_pipeline.db` database file
+
+4. **Your app will be live** at: `https://yourusername-wrestling-highlight-detector.hf.space`
+
+### Option 2: Railway (Easy Cloud Deployment)
+
+1. **Sign up** at [railway.app](https://railway.app)
+2. **Connect your GitHub repository**
+3. **Deploy automatically** - Railway will detect your Python app
+4. **Get a permanent URL** like: `https://your-app-name.railway.app`
+
+### Option 3: Render (Free Tier Available)
+
+1. **Sign up** at [render.com](https://render.com)
+2. **Create a new Web Service**
+3. **Connect your repository**
+4. **Deploy** - Render handles the rest
+
+### Option 4: Keep Local (Temporary Sharing)
+
+If you want to share temporarily while your laptop is on:
+
+```bash
+python gradio_app.py
+# This creates a temporary public URL that others can access
+# Note: Your laptop must stay on and connected to the internet
+```
+
+## File Structure
 
 ```
 wrestling-highlight-detector/
-├── match_directory/           # Full wrestling videos (MP4, AVI, MOV, etc.)
-├── unlabeled_clips/          # Generated highlight clips (auto-created)
-├── gradio_app.py             # Main labeling interface
-├── motion_detection.py       # Video processing and highlight extraction
-├── database_manager.py       # Database operations and management
-├── database_setup.py         # Database initialization
-├── view_database.py          # Database visualization tool
-├── cleanup_originals.py      # Storage management utility
-├── quick_start.py            # Automated setup and verification
-├── requirements.txt          # Python dependencies
-├── wrestling_pipeline.db     # SQLite database (auto-created)
+├── match_directory/          # Source wrestling videos
+├── unlabeled_clips/         # Generated highlight clips
+├── database/                # Database files and utilities
+│   ├── wrestling_pipeline.db   # SQLite database
+│   ├── database_manager.py     # Database operations
+│   ├── database_setup.py       # Database initialization
+│   ├── database_utils.py       # Database utilities
+│   └── view_database.py        # Database viewer
+├── motion_detection.py      # Video processing script
+├── gradio_app.py           # Local web interface
+├── wrestling_model.py      # 3D CNN model training
+├── label_stats.py          # Labeling statistics
+├── add_gender_field.py     # Gender categorization tool
+├── requirements.txt        # Python dependencies
 └── README.md
 ```
 
-## 🛠️ Installation & Setup
+## Database Management
 
-### Quick Start (Recommended)
-```bash
-# Run the automated setup guide
-python3 quick_start.py
-```
+- **View Progress**: `python label_stats.py`
+- **View Database**: `python database/view_database.py`
+- **Database Utils**: `python database/database_utils.py status`
+- **Add Gender Tags**: `python add_gender_field.py`
 
-This will check all prerequisites and guide you through the setup process.
-
-### Manual Setup
-
-#### 1. Prerequisites
-```bash
-# Install FFmpeg (required for video processing)
-# On macOS:
-brew install ffmpeg
-
-# On Ubuntu/Debian:
-sudo apt update && sudo apt install ffmpeg
-
-# On Windows: Download from https://ffmpeg.org/download.html
-```
-
-#### 2. Python Environment
-```bash
-# Create and activate virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install all dependencies
-pip install -r requirements.txt
-```
-
-#### 3. Database Setup
-```bash
-# Initialize the database (runs automatically, but you can run manually)
-python3 database_setup.py
-```
-
-## 🎬 Usage Workflow
-
-### Step 1: Add Wrestling Videos
-Place your full wrestling match videos in the `match_directory/` folder:
-```bash
-# Supported formats: MP4, AVI, MOV, MKV, WMV
-cp your_wrestling_video.mp4 match_directory/
-```
-
-### Step 2: Extract Highlight Clips
-```bash
-# Process all videos and extract potential highlights
-python3 motion_detection.py
-```
-
-This will:
-- Analyze motion patterns in your videos
-- Extract 5-second clips around high-motion moments
-- Store metadata in the database
-- Create web-compatible MP4 clips in `unlabeled_clips/`
-
-### Step 3: Launch Labeling Interface
-```bash
-# Start the web-based labeling app
-python3 gradio_app.py
-```
-
-This provides:
-- Local URL (e.g., `http://127.0.0.1:7860`)
-- Public Gradio URL for sharing with labelers
-- Real-time progress tracking
-
-### Step 4: Label Clips
-Labelers can:
-- Enter their name
-- View clips one at a time
-- Label as Highlight/Not Highlight/Unsure
-- See source video information
-- Track their progress
-
-### Step 5: Monitor Progress
-```bash
-# View database statistics
-python3 view_database.py
-
-# Check labeling progress
-python3 -c "from database_manager import DatabaseManager; db = DatabaseManager(); p = db.get_labeling_progress(); print(f'Progress: {p[\"progress_percent\"]:.1f}% ({p[\"labeled_clips\"]}/{p[\"total_clips\"]} clips)')"
-```
-
-## 🗄️ Database Management
-
-### View Database Contents
-```bash
-# Text-based database viewer
-python3 view_database.py
-
-# Visual database browser (opens GUI)
-open -a "DB Browser for SQLite" wrestling_pipeline.db
-```
-
-### Storage Management
-```bash
-# Clean up original videos after processing (optional)
-python3 cleanup_originals.py
-```
-
-### Database Tables
-- **videos**: Source video metadata and processing status
-- **clips**: Generated highlight clips with timing and motion scores
-- **labels**: Human labels with labeler information
-- **processing_log**: Processing history and error tracking
-
-## 🎯 Labeling Guidelines
-
-### What is a HIGHLIGHT?
-- **Clean takedown** with clear execution
-- **Escape or reversal** with point-scoring intent
-- **Sustained pinning combination** showing control
-- **Match-ending move** (pin, tech, etc.)
-- **Opening whistle** with aggressive action
-- **Failed attempt** that leads to meaningful counter/reversal
-
-### What is NOT a HIGHLIGHT?
-- **Failed attempts** without follow-up action
-- **Breaks, out-of-bounds resets**
-- **Referee motion or downtime**
-- **Post-match activity**
-- **Filler content** (handfighting, etc.)
-
-### Use UNSURE when:
-- The clip is unclear or ambiguous
-- You're not confident in your decision
-- The action is borderline
-
-## 🔧 Advanced Usage
-
-### Add New Videos Incrementally
-```bash
-# Add new videos to match_directory/
-cp new_video.mp4 match_directory/
-
-# Process only new videos
-python3 motion_detection.py
-```
-
-### Export Data for Analysis
-```bash
-# Export labels to CSV
-python3 -c "
-from database_manager import DatabaseManager
-import pandas as pd
-db = DatabaseManager()
-conn = db.get_connection()
-df = pd.read_sql_query('SELECT * FROM labels', conn)
-df.to_csv('exported_labels.csv', index=False)
-conn.close()
-print('Labels exported to exported_labels.csv')
-"
-```
-
-### Database Backup
-```bash
-# Create backup
-cp wrestling_pipeline.db wrestling_pipeline_backup.db
-
-# Restore from backup
-cp wrestling_pipeline_backup.db wrestling_pipeline.db
-```
-
-## 📊 System Statistics
-
-The system tracks:
-- **Total videos processed**
-- **Clips generated per video**
-- **Labeling progress percentage**
-- **Highlight vs Not Highlight ratio**
-- **Labeler activity and decisions**
-- **Processing time and errors**
-
-## 🛠️ Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
-**"Video not playable" error:**
-- Clips are automatically encoded with web-compatible settings
-- If issues persist, regenerate clips: `python3 motion_detection.py`
+1. **"No video files found"**: Make sure videos are in `match_directory/` folder
+2. **"FFmpeg not found"**: Install FFmpeg on your system
+3. **Database errors**: Run `python database/database_setup.py` to reset the database
 
-**"No clips found":**
-- Ensure videos are in `match_directory/`
-- Run `python3 motion_detection.py` to generate clips
-- Check `unlabeled_clips/` directory exists
+### Deployment Issues
 
-**Database errors:**
-- Verify database exists: `ls wrestling_pipeline.db`
-- Reinitialize if needed: `python3 database_setup.py`
+1. **Missing dependencies**: Check `requirements.txt` is complete
+2. **File paths**: Make sure all files are uploaded to the cloud platform
+3. **Database access**: Ensure the database file is included in deployment
 
-**FFmpeg not found:**
-- Install FFmpeg: `brew install ffmpeg` (macOS) or `sudo apt install ffmpeg` (Ubuntu)
+## Contributing
 
-### Performance Tips
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
-- **Large videos**: Process in batches to avoid memory issues
-- **Storage**: Use `cleanup_originals.py` to free space after processing
-- **Labeling**: Multiple labelers can work simultaneously
-- **Backup**: Regularly backup `wrestling_pipeline.db`
+## License
 
-## 🔄 Workflow Summary
-
-1. **Add videos** → `match_directory/`
-2. **Extract clips** → `python3 motion_detection.py`
-3. **Launch UI** → `python3 gradio_app.py`
-4. **Label clips** → Web interface
-5. **Monitor progress** → `python3 view_database.py`
-6. **Add more videos** → Repeat from step 1
-
-## 📈 Future Enhancements
-
-- Machine learning model training on labeled data
-- Automatic highlight classification
-- Advanced motion analysis algorithms
-- Export to various formats (JSON, Excel)
-- Integration with video editing software
-
-## 🤝 Contributing
-
-This system is designed for wrestling analysis and can be extended for other sports or video analysis tasks. The modular design allows for easy customization and enhancement.
-
----
-
-**Built with**: Python, OpenCV, Gradio, SQLite, FFmpeg
-**License**: MIT
+This project is open source. Feel free to use and modify for your own wrestling analysis needs!

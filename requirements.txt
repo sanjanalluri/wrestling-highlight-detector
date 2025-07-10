@@ -2,21 +2,21 @@
 # Core dependencies for the complete pipeline
 
 # Web interface
-gradio>=5.0.0
+gradio>=4.0.0
 
 # Data handling and analysis
 pandas>=2.0.0
-numpy>=1.20.0
+numpy>=1.24.0
 
 # Computer vision and video processing
-opencv-python>=4.5.0
-scipy>=1.7.0
+opencv-python>=4.8.0
+scipy>=1.11.0
 
 # Date/time handling
 python-dateutil>=2.8.0
 
 # Database
-sqlite3  # Built into Python, no installation needed
+# sqlite3  # Built into Python, no installation needed
 
 # Video processing (external dependency)
 # ffmpeg - Install via system package manager:
@@ -25,8 +25,12 @@ sqlite3  # Built into Python, no installation needed
 #   Windows: Download from https://ffmpeg.org/download.html
 
 # Optional: For additional data visualization
-# matplotlib>=3.5.0
-# seaborn>=0.11.0
+matplotlib>=3.7.0
+seaborn>=0.11.0
 
 # Optional: For advanced video processing
-# moviepy>=1.0.0 
+# moviepy>=1.0.0
+
+# Added from the code block
+scikit-learn>=1.2.0
+torch>=2.0.0 

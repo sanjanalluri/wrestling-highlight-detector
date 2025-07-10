@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
 class DatabaseManager:
-    def __init__(self, db_path: str = "wrestling_pipeline.db"):
+    def __init__(self, db_path: str = "database/wrestling_pipeline.db"):
         self.db_path = db_path
         self.ensure_database_exists()
     

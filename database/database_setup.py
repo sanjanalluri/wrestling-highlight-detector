@@ -6,7 +6,7 @@ def create_database():
     """Create the database and tables for the wrestling highlight pipeline"""
     
     # Create database file
-    db_path = "wrestling_pipeline.db"
+    db_path = "database/wrestling_pipeline.db"
     
     # Connect to database (creates it if it doesn't exist)
     conn = sqlite3.connect(db_path)
@@ -87,7 +87,7 @@ def create_database():
 
 def add_sample_data():
     """Add some sample data to demonstrate the database structure"""
-    conn = sqlite3.connect("wrestling_pipeline.db")
+    conn = sqlite3.connect("database/wrestling_pipeline.db")
     cursor = conn.cursor()
     
     # Add a sample video
