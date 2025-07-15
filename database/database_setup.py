@@ -73,6 +73,66 @@ def create_database():
             FOREIGN KEY (video_id) REFERENCES videos (id)
         )
     ''')
+
+    # Create original_matches table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS original_matches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT UNIQUE NOT NULL,
+            filepath TEXT NOT NULL,
+            preview_filepath TEXT,
+            duration REAL,
+            file_size INTEGER,
+            added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Create inclusive_match_clips table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS inclusive_match_clips (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            match_id INTEGER,
+            filename TEXT UNIQUE NOT NULL,
+            filepath TEXT NOT NULL,
+            clip_number INTEGER,
+            start_time REAL,
+            end_time REAL,
+            duration REAL,
+            live_label TEXT,
+            created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (match_id) REFERENCES original_matches (id)
+        )
+    ''')
+
+    # Create match_ranges table for manually selected and labeled ranges
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS match_ranges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            match_id INTEGER,
+            range_number INTEGER,
+            start_time REAL NOT NULL,
+            end_time REAL NOT NULL,
+            duration REAL NOT NULL,
+            label TEXT NOT NULL CHECK (label IN ('LIVE', 'NOT LIVE')),
+            labeler_name TEXT NOT NULL,
+            filename TEXT UNIQUE,
+            filepath TEXT,
+            notes TEXT,
+            created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (match_id) REFERENCES original_matches (id)
+        )
+    ''')
+
+    # Add index for better performance when querying by match_id
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_inclusive_clips_match_id 
+        ON inclusive_match_clips (match_id)
+    ''')
+    
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_match_ranges_match_id 
+        ON match_ranges (match_id)
+    ''')
     
     # Commit changes and close connection
     conn.commit()
@@ -84,6 +144,9 @@ def create_database():
     print("   - clips: Track generated highlight clips")
     print("   - labels: Track clip labels from human annotators")
     print("   - processing_log: Track pipeline execution history")
+    print("   - original_matches: Track source match videos")
+    print("   - inclusive_match_clips: Track 5-second clips from matches")
+    print("   - match_ranges: Track manually selected and labeled time ranges from matches")
 
 def add_sample_data():
     """Add some sample data to demonstrate the database structure"""

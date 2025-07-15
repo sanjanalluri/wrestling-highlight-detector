@@ -6,10 +6,12 @@ import os
 import random
 import pandas as pd
 from datetime import datetime
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.database_manager import DatabaseManager
 
 # Config
-CLIP_DIR = "unlabeled_clips"  # Use new properly encoded clips
+CLIP_DIR = "../live_filter/clips"  # Use new properly encoded clips
 GUIDANCE_TEXT = """
 ## What is a HIGHLIGHT?
 
@@ -47,7 +49,7 @@ def get_labeling_progress():
 
 def get_source_video_info():
     """Get information about source videos in match_directory"""
-    match_dir = "match_directory"
+    match_dir = "../match_directory"
     if not os.path.exists(match_dir):
         return "No match_directory found"
     

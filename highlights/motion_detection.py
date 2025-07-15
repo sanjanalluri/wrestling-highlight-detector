@@ -6,11 +6,13 @@ from scipy.signal import find_peaks
 import subprocess
 import os
 import glob
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.database_manager import DatabaseManager
 
 # Configuration
-MATCH_DIR = 'match_directory'  # Directory containing full wrestling videos
-OUTPUT_DIR = 'unlabeled_clips'  # Directory for generated highlight clips
+MATCH_DIR = '../match_directory'  # Directory containing full wrestling videos
+OUTPUT_DIR = '../live_filter/clips'  # Directory for generated highlight clips
 
 def process_video(video_path: str, output_dir: str, db_manager: DatabaseManager, video_id: int):
     """Process a single video file and extract highlight clips"""
