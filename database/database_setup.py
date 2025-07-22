@@ -123,6 +123,23 @@ def create_database():
         )
     ''')
 
+    # Create training_chunks table for processed training data
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS training_chunks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chunk_id TEXT UNIQUE NOT NULL,
+            label TEXT NOT NULL,
+            virtual_start REAL,
+            virtual_end REAL,
+            duration REAL,
+            visual_path TEXT,
+            audio_path TEXT,
+            metadata_path TEXT,
+            range_ids TEXT,  -- JSON array of range IDs this chunk spans
+            created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     # Add index for better performance when querying by match_id
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_inclusive_clips_match_id 
@@ -132,6 +149,16 @@ def create_database():
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_match_ranges_match_id 
         ON match_ranges (match_id)
+    ''')
+    
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_training_chunks_label 
+        ON training_chunks (label)
+    ''')
+    
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_training_chunks_chunk_id 
+        ON training_chunks (chunk_id)
     ''')
     
     # Commit changes and close connection
@@ -147,6 +174,7 @@ def create_database():
     print("   - original_matches: Track source match videos")
     print("   - inclusive_match_clips: Track 5-second clips from matches")
     print("   - match_ranges: Track manually selected and labeled time ranges from matches")
+    print("   - training_chunks: Track processed training data")
 
 def add_sample_data():
     """Add some sample data to demonstrate the database structure"""
