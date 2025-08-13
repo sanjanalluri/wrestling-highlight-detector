@@ -1,12 +1,16 @@
 # Wrestling Highlight Detector - Requirements
 # Core dependencies for the complete pipeline
+#
+# IMPORTANT: NumPy version constraint
+# NumPy 2.x is incompatible with PyTorch 2.x (compiled with NumPy 1.x)
+# Use NumPy 1.x for PyTorch compatibility
 
 # Web interface
 gradio>=4.0.0
 
 # Data handling and analysis
 pandas>=2.0.0
-numpy>=1.24.0
+numpy>=1.24.0,<2.0.0  # PyTorch compatibility constraint
 
 # Computer vision and video processing
 opencv-python>=4.8.0
@@ -31,9 +35,9 @@ seaborn>=0.11.0
 # Optional: For advanced video processing
 # moviepy>=1.0.0
 
-# Added from the code block
+# Machine learning and deep learning
 scikit-learn>=1.2.0
-torch>=2.0.0
+torch>=2.0.0,<3.0.0  # Ensure compatibility with current codebase
 
 # Audio processing for live filter
 librosa>=0.10.0

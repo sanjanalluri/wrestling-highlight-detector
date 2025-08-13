@@ -50,10 +50,15 @@ def show_processing_status():
             processed_range_ids.update(range_ids)
     
     # Count unprocessed ranges
-    cursor.execute('SELECT COUNT(*) FROM match_ranges WHERE id NOT IN ({})'.format(
-        ','.join('?' * len(processed_range_ids)) if processed_range_ids else 'NULL'
-    ), list(processed_range_ids) if processed_range_ids else [])
-    unprocessed_ranges = cursor.fetchone()[0]
+    if processed_range_ids:
+        cursor.execute('SELECT COUNT(*) FROM match_ranges WHERE id NOT IN ({})'.format(
+            ','.join('?' * len(processed_range_ids))
+        ), list(processed_range_ids))
+        unprocessed_ranges = cursor.fetchone()[0]
+    else:
+        # If no chunks exist, all ranges are unprocessed
+        cursor.execute('SELECT COUNT(*) FROM match_ranges')
+        unprocessed_ranges = cursor.fetchone()[0]
     
     conn.close()
     

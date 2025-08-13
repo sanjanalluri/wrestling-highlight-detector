@@ -172,4 +172,9 @@ training_curves.png
 
 # Temporary files
 *.tmp
-*.temp 
+*.temp
+
+# Feature files and model outputs
+live_filter/features/
+live_filter/models/
+*.npz 
