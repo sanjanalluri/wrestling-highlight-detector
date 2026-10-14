@@ -22,7 +22,9 @@ segmentation:
   input_size: [64, 64]
 
 features:
-  backbone: efficientnet_b0
+  # The real pipeline uses EfficientNet-B3 (configs/default.yaml). This tiny timm backbone
+  # trains from scratch in seconds on CPU; tests/test_models.py still checks the B3 shapes.
+  backbone: resnet10t
   pretrained: false
   freeze: false
 
@@ -37,10 +39,10 @@ classifier:
 
 training:
   k_folds: 2
-  epochs: 3
+  epochs: 8
   batch_size: 8
   learning_rate: 0.003
-  early_stopping_patience: 2
+  early_stopping_patience: 4
   device: cpu
 
 inference:

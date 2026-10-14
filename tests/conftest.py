@@ -5,12 +5,25 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Tuple
 
+import socket
+
 import pytest
 
 from wrestleai.config import Config, load_config
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TEST_CONFIG = REPO_ROOT / "configs" / "test.yaml"
+
+
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail any test that tries to open a network connection (e.g. a weight download)."""
+
+    def guard(*args, **kwargs):
+        raise RuntimeError("Network access attempted during tests; tests must run offline")
+
+    monkeypatch.setattr(socket.socket, "connect", guard)
+    monkeypatch.setattr(socket, "create_connection", guard)
 
 
 @pytest.fixture()
