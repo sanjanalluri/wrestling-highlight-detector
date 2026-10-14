@@ -188,3 +188,6 @@ live_filter/models/
 *.db
 *.sqlite
 *.npy
+
+# Small sample clip committed as a proof-of-concept (see samples/README.md)
+!samples/*.mp4
