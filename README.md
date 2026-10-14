@@ -11,7 +11,9 @@ A machine learning project to automatically detect highlights in wrestling match
 - **Note**: This implementation is preserved in `live_filter/` directory but is not part of the current Groot pipeline
 
 ### Phase 2: Groot LSTM Pipeline (Current Focus)
-Advanced LSTM-based highlight detection with modular, testable components.
+Advanced LSTM-based highlight detection with modular, testable components, implemented as the
+`wrestleai` Python package in `src/wrestleai/`. The original Groot data-processing scripts in
+`groot/` are kept for reference; their logic has been ported into the package.
 
 ## Groot Pipeline Architecture
 
@@ -22,9 +24,15 @@ The Groot pipeline is divided into modular, independently testable components:
 3. **2D CNN Feature Extractor** (EfficientNet-B3) - Extract per-frame features
 4. **Bi-LSTM Temporal Modeling** - Capture temporal patterns
 5. **Dense Classifier** - Final highlight/non-highlight classification
-6. **Connector Training Script** - Orchestrates all 4 model architectures
-7. **Training Phase** - Full pipeline training with cross-validation
-8. **Testing Phase** - Evaluation and deployment
+6. **Connector** - `HighlightModel` chains stages 2–5 into one model
+7. **Training Phase** - k-fold cross-validated training with early stopping
+8. **Testing Phase** - Out-of-fold evaluation and video-level inference
+
+```
+video ─► 12 fps frames ─► 5 s windows (2.5 s stride) ─► 16 frames/window
+      ─► [DeepLabV3+ silhouette mask] ─► EfficientNet-B3 (1536-d per frame)
+      ─► Bi-LSTM (2 layers, 384 hidden, bidirectional) ─► Dense 512 ─► 128 ─► classes
+```
 
 ## Development Philosophy
 
@@ -43,102 +51,147 @@ The Groot pipeline is divided into modular, independently testable components:
 - Use configuration files for easy parameter tuning
 - Implement proper logging and error handling at each stage
 
+## Quick Start
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+pip install -e .
+pytest                             # 66 tests, ~20 s on CPU, fully offline
+```
+
+Requires Python 3.9+ (tested on 3.11). `requirements.txt` pins torch 2.2.x, the last release with Intel-macOS
+wheels; on other platforms torch/torchvision can be upgraded together. The older scripts in
+`live_filter/`, `highlights/` and `database/` use `requirements-legacy.txt`.
+
+### Try it on synthetic data (about 1–2 minutes on CPU)
+
+```bash
+python scripts/make_synthetic_data.py --out data/synthetic/videos
+wrestleai extract data/synthetic/videos --config configs/test.yaml
+wrestleai train    --config configs/test.yaml --run-name demo
+wrestleai evaluate --config configs/test.yaml
+wrestleai infer data/synthetic/videos/synthetic_match_03.mp4 --config configs/test.yaml
+```
+
+The synthetic videos are toy data (fast-moving blobs during "highlights"). They show that
+every stage runs and that the model can learn, not how it performs on real wrestling.
+
+### Real sample clip
+
+`samples/` holds a 100 s, 1.3 MB excerpt of a real match with hand-labeled highlight ranges
+(see [`samples/README.md`](samples/README.md)):
+
+```bash
+wrestleai extract samples                       # 39 windows, 5 labeled highlight
+wrestleai label brynnsarah_sample.mp4 --list    # show the labeled ranges
+```
+
+## CLI
+
+All commands accept `--config <yaml>` (default `configs/default.yaml`), repeatable
+`--set section.key=value` overrides, `--log-level` and `--log-file`.
+
+| Command | What it does |
+|---|---|
+| `wrestleai extract <videos or dirs> [--convert]` | Probe videos with OpenCV, store them in SQLite, import `<name>.labels.csv` files found next to them, and slice each video into labeled windows. `--convert` writes 12 fps, 224×224 copies for faster training. With no inputs, re-windows every video already in the database. |
+| `wrestleai label <video>` | Interactive terminal labeler (`1:30 1:42 highlight # double leg`, `list`, `delete 2`, `play`, `done`). Non-interactive: `--add START END [LABEL]`, `--import file.csv`, `--list`. |
+| `wrestleai train [--run-name NAME]` | k-fold cross-validation over all labeled windows. Windows from the same video stay in one fold. Writes `fold_<k>.pt`, `best.pt`, `config.yaml` and `cv_summary.json` to `checkpoints/<run>/`. |
+| `wrestleai evaluate [--run NAME]` | Out-of-fold accuracy, precision, recall, F1, ROC-AUC, PR-AUC and confusion matrix: each window is scored by the fold model that never trained on it. `--checkpoint X --video-ids ...` scores one checkpoint on held-out videos. |
+| `wrestleai infer <video> [--threshold T]` | Per-window highlight probabilities (`outputs/<name>.windows.csv`) and merged highlight time ranges (`outputs/<name>.highlights.json`). |
+
+Labels are `start_sec,end_sec,label` ranges. A window takes a range's label when that range
+covers at least `labels.overlap_threshold` (default 50%) of it; everything else is
+`non_highlight`. Set `labels.classes` to more names (e.g. `[none, takedown, pin]`) for
+multi-class technique labels.
+
+To bring over labels made with the original Groot terminal labeler (read-only; the old
+database is not modified):
+
+```bash
+python scripts/import_legacy_groot_db.py --legacy-db database/wrestling_pipeline.db
+wrestleai extract --labeled-only
+```
+
+## Configuration
+
+Every hyperparameter lives in [`configs/default.yaml`](configs/default.yaml), backed by
+typed dataclasses in `src/wrestleai/config.py` (unknown keys are rejected).
+[`configs/test.yaml`](configs/test.yaml) is a tiny CPU-only variant used by the tests and
+the synthetic demo. Key settings:
+
+- `data`: 12 fps, 224×224 frames, 5 s windows, 2.5 s stride, 16 frames per window
+- `segmentation.enabled` (default `false`) and `segmentation.checkpoint`
+- `features.backbone` (any timm model, default `efficientnet_b3`) and `features.freeze`
+- `temporal`, `classifier`: Bi-LSTM and dense head sizes
+- `training`: `k_folds`, epochs, learning rate, class weighting, early stopping on `monitor`
+- `inference`: threshold, merge gap and minimum range length
+
 ## Project Structure
 
 ```
 wrestling-highlight-detector/
-├── groot/                    # Groot LSTM Pipeline (Current Focus)
-│   ├── config.py              # All hyperparameters and settings
-│   ├── dataset_loader.py      # Dataset download and setup
-│   ├── prepare_training_data.py  # Data preparation pipeline
-│   ├── models/
-│   │   ├── segmentation.py    # DeepLabV3+ implementation
-│   │   ├── cnn_feature_extractor.py  # EfficientNet implementation
-│   │   ├── lstm_temporal.py   # Bi-LSTM implementation
-│   │   └── classifier.py      # Dense classification network
-│   ├── data/
-│   │   ├── dataset.py         # PyTorch dataset classes
-│   │   └── transforms.py      # Data augmentation
-│   ├── training/
-│   │   ├── trainer.py         # Training loop
-│   │   ├── metrics.py         # Evaluation metrics
-│   │   └── visualization.py   # Plotting utilities
-│   ├── inference/
-│   │   └── predictor.py       # Inference pipeline
-│   └── utils/
-│       ├── database.py        # Database operations
-│       └── video_utils.py     # Video processing utilities
+├── src/wrestleai/             # Groot pipeline package
+│   ├── config.py              # Typed YAML config
+│   ├── cli.py                 # `wrestleai` command
+│   ├── db/                    # SQLite: videos, label_ranges, clip_windows
+│   ├── data/                  # Stage 1: video I/O, windowing, label mapping, Dataset, dedup, synthetic data
+│   ├── labeling/              # Terminal range labeler
+│   ├── segmentation/          # Stage 2: DeepLabV3+ silhouette masking
+│   ├── features/              # Stage 3: EfficientNet-B3 per-frame features
+│   ├── temporal/              # Stage 4: Bi-LSTM
+│   ├── models/                # Stage 5: classifier head + HighlightModel
+│   ├── training/              # k-fold trainer, metrics, checkpoints, evaluation
+│   ├── inference/             # Window scoring and highlight-range merging
+│   └── utils/                 # Logging, seeding, device, time parsing
+├── configs/                   # default.yaml, test.yaml
+├── scripts/                   # Synthetic data generator, legacy DB import
+├── samples/                   # Small real sample clip + labels
+├── tests/                     # pytest suite (one file per stage + end-to-end smoke test)
+├── groot/                     # Original Groot data-processing scripts (reference)
 ├── live_filter/               # Phase 1: Live vs Non-Live Detection (Legacy - Not Used)
-├── highlights/                # Phase 2: Highlight Detection (Legacy)
-├── database/                  # Database management
+├── highlights/                # Earlier highlight detection (Legacy)
+├── database/                  # Legacy database management
 ├── archives/                  # Old/utility scripts
-├── match_directory/           # Original match videos
-├── requirements.txt           # Python dependencies
-└── README.md                  # This file
+└── match_directory/           # Full match videos (not in git)
 ```
+
+Generated files (`data/`, `checkpoints/`, `outputs/`, `*.db`) are git-ignored.
 
 ## Current Status
 
-**Active Development**: Data Processing Pipeline (Part 1 of Groot)
-
-The project is currently focused on implementing the data processing component of the Groot pipeline in the `groot/` directory. This foundational component will handle:
-- Video preprocessing and frame extraction
-- Dataset preparation and validation
-- Database integration for training data
-- Sub-pipeline testing and validation
-
-## Installation
-
-1. Create a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-3. Install Groot-specific dependencies:
-```bash
-pip install kaggle
-pip install segmentation-models-pytorch
-pip install torch torchvision
-pip install tqdm matplotlib seaborn
-```
-
-4. Initialize the database:
-```bash
-python database/database_setup.py
-```
+- **Working end to end:** data processing, labeling, all five model stages, k-fold
+  training, evaluation and inference, covered by 66 offline tests including an
+  end-to-end smoke test through the CLI.
+- **Labeled data:** 8 highlight ranges across 2 matches, far too few to train a useful
+  model. Labeling more matches is the main next step.
+- **Segmentation:** DeepLabV3+ only has an ImageNet-pretrained encoder. Its masks are not
+  meaningful until it is fine-tuned on person masks (e.g. the Kaggle person-segmentation
+  dataset), so it is disabled by default and warns if enabled without a checkpoint.
+- **Short labels:** with 5 s windows and a 50% overlap rule, labeled ranges of 2 s or less
+  never produce a highlight window. Shorter windows or a lower `labels.overlap_threshold`
+  would keep them.
 
 ## Next Steps
 
-1. **Complete Data Processing Pipeline** - Implement and test video preprocessing
-2. **Segmentation Model** - Develop and validate DeepLabV3+ implementation
-3. **Feature Extractor** - Build EfficientNet-B3 feature extraction
-4. **LSTM Temporal Modeling** - Implement Bi-LSTM for temporal patterns
-5. **Dense Classifier** - Create final classification network
-6. **Integration Testing** - Connect all components
-7. **Training Phase** - Full pipeline training
-8. **Testing Phase** - Evaluation and deployment
+1. Label more matches (`wrestleai label`) and re-run `wrestleai extract --labeled-only`
+2. Fine-tune DeepLabV3+ on person-segmentation data and enable masking
+3. Cache per-frame CNN features so training with a frozen EfficientNet-B3 is fast on CPU
+4. Train on the full labeled set and evaluate on held-out matches
+5. Multi-class technique labels (takedown, sprawl, single leg, ...)
 
 ## Database Schema
 
-### Legacy Tables (Phase 1 - Not Used in Groot)
-- `original_matches`: Match video metadata
-- `match_ranges`: Time ranges labeled as LIVE or NOT LIVE
-- `labels`: Individual clip labels
-- **Note**: These tables exist from the previous implementation but are not used in the Groot pipeline
+### Groot Tables (`data/wrestleai.db`)
+- `videos` - Video path, FPS, frame count, resolution, duration, optional resampled copy
+- `label_ranges` - Labeled time ranges (`start_sec`, `end_sec`, `label`, labeler, notes)
+- `clip_windows` - Fixed windows per video and the label mapped onto each
 
-### Groot Tables (Phase 2)
-- `lstm_training_clips` - New labeled training data
-- `lstm_models` - Model versions and checkpoints
-- `lstm_training_runs` - Training session metadata
-- `lstm_predictions` - Clip-level predictions
-- `lstm_match_predictions` - Full match sliding window results
-- `lstm_features` - Intermediate features for analysis
+### Legacy Tables (`database/wrestling_pipeline.db`, not used by the package)
+- `original_matches`, `match_ranges`, `labels`: Phase 1 live filter
+- `groot_videos`, `groot_highlight_clips`: original Groot scripts (importable with
+  `scripts/import_legacy_groot_db.py`)
 
 ## Development Guidelines
 
