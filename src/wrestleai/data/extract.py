@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List, Optional, Sequence
 
 from wrestleai.config import Config
-from wrestleai.data.labels import LabelRange, label_windows
+from wrestleai.data.labels import LabelRange, label_windows, load_label_file
 from wrestleai.data.video import convert_video, find_videos, probe_video
 from wrestleai.data.windowing import compute_windows
 from wrestleai.db.database import Database, VideoRecord
@@ -44,6 +44,36 @@ def register_video(
     return record
 
 
+IMPORTED_BY = "import"
+
+
+def import_label_file(db: Database, video: VideoRecord, label_file: str | Path) -> int:
+    """Load ranges from a CSV/JSON label file into the DB for ``video``.
+
+    Re-importing is idempotent: ranges previously imported for this video are replaced,
+    while ranges entered by hand in the labeler are left untouched.
+    """
+    ranges = load_label_file(label_file)
+    for old in db.list_label_ranges(video.id):
+        if old.labeled_by == IMPORTED_BY:
+            db.delete_label_range(old.id)
+    for r in ranges:
+        db.add_label_range(video.id, r.start_sec, r.end_sec, r.label, labeled_by=IMPORTED_BY,
+                           notes=f"from {Path(label_file).name}")
+    logger.info("Imported %d ranges for %s from %s", len(ranges), video.name, label_file)
+    return len(ranges)
+
+
+def sidecar_label_file(video_path: str | Path) -> Optional[Path]:
+    """Return ``<stem>.labels.csv`` / ``.labels.json`` next to the video if present."""
+    p = Path(video_path)
+    for suffix in (".labels.csv", ".labels.json"):
+        candidate = p.with_name(p.stem + suffix)
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def build_windows(db: Database, video: VideoRecord, cfg: Config) -> int:
     """(Re)compute clip windows for ``video`` and map its labeled ranges onto them."""
     ranges = [LabelRange(r.start_sec, r.end_sec, r.label) for r in db.list_label_ranges(video.id)]
@@ -67,8 +97,9 @@ def extract(
     inputs: Optional[Sequence[str | Path]] = None,
     convert: bool = False,
     labeled_only: bool = False,
+    import_labels: bool = True,
 ) -> List[VideoRecord]:
-    """Register videos (files or directories; defaults to ``paths.video_dir``) and build windows.
+    """Register videos (files or directories) and build their labeled clip windows.
 
     Args:
         db: database to write to.
@@ -77,6 +108,7 @@ def extract(
             database is re-windowed (useful after labeling).
         convert: write resampled copies at ``data.target_fps``.
         labeled_only: only build windows for videos that have at least one labeled range.
+        import_labels: load ``<stem>.labels.csv``/``.json`` files found next to input videos.
     """
     videos: List[VideoRecord] = []
     if inputs:
@@ -87,6 +119,11 @@ def extract(
         if not files:
             raise FileNotFoundError(f"No videos found in {list(map(str, inputs))}")
         videos = [register_video(db, f, cfg, convert=convert) for f in files]
+        if import_labels:
+            for f, video in zip(files, videos):
+                label_file = sidecar_label_file(f)
+                if label_file is not None:
+                    import_label_file(db, video, label_file)
     else:
         videos = db.list_videos()
         if not videos:
