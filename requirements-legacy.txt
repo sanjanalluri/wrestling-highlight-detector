@@ -1,0 +1,48 @@
+# Wrestling Highlight Detector - LEGACY requirements (live_filter/, highlights/, database/, groot/ scripts)
+# The Groot pipeline package (src/wrestleai) uses requirements.txt instead.
+# Core dependencies for the complete pipeline
+#
+# IMPORTANT: NumPy version constraint
+# NumPy 2.x is incompatible with PyTorch 2.x (compiled with NumPy 1.x)
+# Use NumPy 1.x for PyTorch compatibility
+
+# Web interface
+gradio>=4.0.0
+
+# Data handling and analysis
+pandas>=2.0.0
+numpy>=1.24.0,<2.0.0  # PyTorch compatibility constraint
+
+# Computer vision and video processing
+opencv-python>=4.8.0
+scipy>=1.11.0
+
+# Date/time handling
+python-dateutil>=2.8.0
+
+# Database
+# sqlite3  # Built into Python, no installation needed
+
+# Video processing (external dependency)
+# ffmpeg - Install via system package manager:
+#   macOS: brew install ffmpeg
+#   Ubuntu: sudo apt install ffmpeg
+#   Windows: Download from https://ffmpeg.org/download.html
+
+# Optional: For additional data visualization
+matplotlib>=3.7.0
+seaborn>=0.11.0
+
+# Optional: For advanced video processing
+# moviepy>=1.0.0
+
+# Machine learning and deep learning
+scikit-learn>=1.2.0
+torch>=2.0.0,<3.0.0  # Ensure compatibility with current codebase
+
+# Audio processing for live filter
+librosa>=0.10.0
+soundfile>=0.12.0
+
+# For better audio support
+ffmpeg-python>=0.2.0 

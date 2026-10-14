@@ -178,3 +178,13 @@ training_curves.png
 live_filter/features/
 live_filter/models/
 *.npz 
+# WrestleAI Groot pipeline outputs
+/data/
+/checkpoints/
+/runs/
+/outputs/
+*.pt
+*.ckpt
+*.db
+*.sqlite
+*.npy

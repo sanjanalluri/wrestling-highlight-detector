@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wrestleai"
+version = "0.1.0"
+description = "Groot pipeline: segmentation + CNN + Bi-LSTM highlight detection for wrestling footage"
+requires-python = ">=3.9"
+dependencies = []  # see requirements.txt
+
+[project.scripts]
+wrestleai = "wrestleai.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

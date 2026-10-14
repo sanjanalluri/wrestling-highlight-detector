@@ -1,0 +1,72 @@
+# Groot pipeline default configuration.
+# Relative paths resolve against the directory you run `wrestleai` from (the repo root).
+# Override any value on the command line: wrestleai train --set training.epochs=10
+
+paths:
+  db_path: data/wrestleai.db
+  video_dir: match_directory
+  processed_dir: data/processed_videos
+  checkpoint_dir: checkpoints
+  output_dir: outputs
+
+data:
+  target_fps: 12.0
+  resize: [224, 224]          # (height, width) fed to the CNN
+  window_seconds: 5.0
+  stride_seconds: 2.5
+  frames_per_window: 16
+  min_window_seconds: 1.0
+
+labels:
+  classes: [non_highlight, highlight]   # classes[0] is assigned to unlabeled time
+  positive_class: highlight
+  overlap_threshold: 0.5
+
+segmentation:
+  enabled: false
+  encoder: resnet50
+  encoder_weights: imagenet
+  checkpoint: null            # path to fine-tuned person-segmentation weights
+  input_size: [512, 512]
+  threshold: 0.5
+  soft_mask: false
+  freeze: true
+
+features:
+  backbone: efficientnet_b3   # any timm model; B3 -> 1536-d per-frame features
+  pretrained: true
+  freeze: true
+
+temporal:
+  hidden_size: 384
+  num_layers: 2
+  dropout: 0.2
+  bidirectional: true
+  pooling: mean
+
+classifier:
+  hidden_dims: [512, 128]
+  dropout: 0.3
+
+training:
+  k_folds: 5
+  epochs: 50
+  batch_size: 8
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  class_weighting: true
+  early_stopping_patience: 8
+  early_stopping_min_delta: 0.001
+  monitor: f1
+  group_by_video: true
+  seed: 42
+  num_workers: 0
+  device: auto
+
+inference:
+  threshold: 0.5
+  merge_gap_seconds: 0.0
+  min_range_seconds: 0.0
+  batch_size: 8
+
+log_level: INFO

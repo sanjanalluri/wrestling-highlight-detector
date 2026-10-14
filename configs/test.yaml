@@ -1,0 +1,47 @@
+# Tiny, offline configuration for tests and the synthetic demo.
+# No pretrained weights are downloaded; everything runs on CPU in seconds.
+
+paths:
+  db_path: data/synthetic/wrestleai.db
+  video_dir: data/synthetic/videos
+  processed_dir: data/synthetic/processed_videos
+  checkpoint_dir: data/synthetic/checkpoints
+  output_dir: data/synthetic/outputs
+
+data:
+  target_fps: 6.0
+  resize: [64, 64]
+  window_seconds: 2.0
+  stride_seconds: 1.0
+  frames_per_window: 4
+
+segmentation:
+  enabled: false
+  encoder: resnet18
+  encoder_weights: null
+  input_size: [64, 64]
+
+features:
+  backbone: efficientnet_b0
+  pretrained: false
+  freeze: false
+
+temporal:
+  hidden_size: 16
+  num_layers: 1
+  dropout: 0.0
+
+classifier:
+  hidden_dims: [16]
+  dropout: 0.0
+
+training:
+  k_folds: 2
+  epochs: 3
+  batch_size: 8
+  learning_rate: 0.003
+  early_stopping_patience: 2
+  device: cpu
+
+inference:
+  batch_size: 8
