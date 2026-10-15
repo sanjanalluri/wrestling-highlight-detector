@@ -64,3 +64,48 @@ def test_folds_fall_back_when_too_few_videos(caplog) -> None:
 def test_folds_reduce_k_for_rare_class() -> None:
     folds = make_folds(np.array([0] * 10 + [1] * 2), np.arange(12), k=5, seed=0)
     assert len(folds) == 2
+
+
+def test_checkpoint_omits_frozen_pretrained_backbone(cfg, tmp_path, monkeypatch) -> None:
+    import timm
+
+    from wrestleai.models import build_model
+    from wrestleai.training.checkpoint import load_checkpoint, save_checkpoint
+
+    real_create = timm.create_model
+
+    def fake_pretrained(name, pretrained=False, **kwargs):
+        # Stand-in for downloading weights: deterministic "pretrained" init, offline.
+        torch.manual_seed(1234)
+        return real_create(name, pretrained=False, **kwargs)
+
+    monkeypatch.setattr(timm, "create_model", fake_pretrained)
+    cfg.features.freeze, cfg.features.pretrained = True, True
+    model = build_model(cfg).eval()
+    small, full = tmp_path / "small.pt", tmp_path / "full.pt"
+    save_checkpoint(small, model, cfg)
+    torch.save({"model_state": model.state_dict(), "config": cfg.to_dict()}, full)
+
+    ckpt = torch.load(small)
+    assert ckpt["excluded_prefixes"] == ["features."]
+    assert not any(k.startswith("features.") for k in ckpt["model_state"])
+    assert small.stat().st_size < full.stat().st_size / 2
+
+    clips = torch.randn(2, cfg.data.frames_per_window, 3, *cfg.data.resize)
+    with torch.no_grad():
+        expected = model(clips)
+        for path in (small, full):  # new compact format and older full checkpoints both load
+            loaded, _, _ = load_checkpoint(path)
+            assert torch.allclose(loaded(clips), expected, atol=1e-5)
+
+
+def test_trained_backbone_is_kept_in_checkpoint(cfg, tmp_path) -> None:
+    from wrestleai.models import build_model
+    from wrestleai.training.checkpoint import load_checkpoint, save_checkpoint
+
+    model = build_model(cfg).eval()  # test config: backbone trained, not pretrained
+    save_checkpoint(tmp_path / "c.pt", model, cfg)
+    assert torch.load(tmp_path / "c.pt")["excluded_prefixes"] == []
+    clips = torch.randn(1, cfg.data.frames_per_window, 3, *cfg.data.resize)
+    with torch.no_grad():
+        assert torch.allclose(load_checkpoint(tmp_path / "c.pt")[0](clips), model(clips), atol=1e-5)
