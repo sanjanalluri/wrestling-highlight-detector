@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List, Optional, Sequence
 
 from wrestleai.config import Config
-from wrestleai.data.labels import LabelRange, label_windows, load_label_file
+from wrestleai.data.labels import LabelRange, label_windows, load_label_file, save_label_file
 from wrestleai.data.video import convert_video, find_videos, probe_video
 from wrestleai.data.windowing import compute_windows
 from wrestleai.db.database import Database, VideoRecord
@@ -51,26 +51,52 @@ def import_label_file(db: Database, video: VideoRecord, label_file: str | Path) 
     """Load ranges from a CSV/JSON label file into the DB for ``video``.
 
     Re-importing is idempotent: ranges previously imported for this video are replaced,
-    while ranges entered by hand in the labeler are left untouched.
+    ranges entered by hand in the labeler are left untouched, and file ranges identical to
+    an existing hand-entered range (same start, end and label) are skipped, so a database
+    and its own export never end up with duplicates.
     """
     ranges = load_label_file(label_file)
+    kept = []
     for old in db.list_label_ranges(video.id):
         if old.labeled_by == IMPORTED_BY:
             db.delete_label_range(old.id)
+        else:
+            kept.append((round(old.start_sec, 3), round(old.end_sec, 3), old.label))
+    added = 0
     for r in ranges:
+        if (round(r.start_sec, 3), round(r.end_sec, 3), r.label) in kept:
+            continue
         db.add_label_range(video.id, r.start_sec, r.end_sec, r.label, labeled_by=IMPORTED_BY,
-                           notes=f"from {Path(label_file).name}")
-    logger.info("Imported %d ranges for %s from %s", len(ranges), video.name, label_file)
-    return len(ranges)
+                           notes=r.notes)
+        added += 1
+    logger.info("Imported %d ranges for %s from %s (%d already present)", added, video.name,
+                label_file, len(ranges) - added)
+    return added
 
 
-def sidecar_label_file(video_path: str | Path) -> Optional[Path]:
-    """Return ``<stem>.labels.csv`` / ``.labels.json`` next to the video if present."""
+def export_labels(db: Database, out_dir: str | Path) -> List[Path]:
+    """Write ``<video stem>.labels.csv`` (with notes) for every video that has labeled ranges."""
+    written: List[Path] = []
+    for video in db.list_videos():
+        ranges = db.list_label_ranges(video.id)
+        if not ranges:
+            continue
+        path = Path(out_dir) / f"{Path(video.name).stem}.labels.csv"
+        save_label_file([LabelRange(r.start_sec, r.end_sec, r.label, r.notes) for r in ranges], path)
+        written.append(path)
+        logger.info("Exported %d ranges for %s -> %s", len(ranges), video.name, path)
+    return written
+
+
+def sidecar_label_file(video_path: str | Path, labels_dir: Optional[str | Path] = None) -> Optional[Path]:
+    """Return ``<stem>.labels.csv`` / ``.labels.json`` from ``labels_dir`` or next to the video."""
     p = Path(video_path)
-    for suffix in (".labels.csv", ".labels.json"):
-        candidate = p.with_name(p.stem + suffix)
-        if candidate.exists():
-            return candidate
+    folders = ([Path(labels_dir)] if labels_dir else []) + [p.parent]
+    for folder in folders:
+        for suffix in (".labels.csv", ".labels.json"):
+            candidate = folder / (p.stem + suffix)
+            if candidate.exists():
+                return candidate
     return None
 
 
@@ -98,6 +124,7 @@ def extract(
     convert: bool = False,
     labeled_only: bool = False,
     import_labels: bool = True,
+    labels_dir: Optional[str | Path] = None,
 ) -> List[VideoRecord]:
     """Register videos (files or directories) and build their labeled clip windows.
 
@@ -109,6 +136,8 @@ def extract(
         convert: write resampled copies at ``data.target_fps``.
         labeled_only: only build windows for videos that have at least one labeled range.
         import_labels: load ``<stem>.labels.csv``/``.json`` files found next to input videos.
+        labels_dir: also look for label files here (e.g. the repo's ``labels/`` folder);
+            applies to input videos and, with no inputs, to videos already in the database.
     """
     videos: List[VideoRecord] = []
     if inputs:
@@ -121,13 +150,18 @@ def extract(
         videos = [register_video(db, f, cfg, convert=convert) for f in files]
         if import_labels:
             for f, video in zip(files, videos):
-                label_file = sidecar_label_file(f)
+                label_file = sidecar_label_file(f, labels_dir)
                 if label_file is not None:
                     import_label_file(db, video, label_file)
     else:
         videos = db.list_videos()
         if not videos:
             raise RuntimeError("No videos in the database; pass video files or a directory")
+        if import_labels and labels_dir:
+            for video in videos:
+                label_file = sidecar_label_file(video.path, labels_dir)
+                if label_file is not None:
+                    import_label_file(db, video, label_file)
     built = 0
     for video in videos:
         if labeled_only and not db.list_label_ranges(video.id):

@@ -97,6 +97,7 @@ All commands accept `--config <yaml>` (default `configs/default.yaml`), repeatab
 |---|---|
 | `wrestleai extract <videos or dirs> [--convert]` | Probe videos with OpenCV, store them in SQLite, import `<name>.labels.csv` files found next to them, and slice each video into labeled windows. `--convert` writes 12 fps, 224×224 copies for faster training. With no inputs, re-windows every video already in the database. |
 | `wrestleai label <video>` | Interactive terminal labeler (`1:30 1:42 highlight # double leg`, `list`, `delete 2`, `play`, `done`). Non-interactive: `--add START END [LABEL]`, `--import file.csv`, `--list`. |
+| `wrestleai export-labels [--out labels]` | Write each video's labeled ranges (with notes) to `<name>.labels.csv`, e.g. to keep them in git. |
 | `wrestleai train [--run-name NAME]` | k-fold cross-validation over all labeled windows. Windows from the same video stay in one fold. Writes `fold_<k>.pt`, `best.pt`, `config.yaml` and `cv_summary.json` to `checkpoints/<run>/`. |
 | `wrestleai evaluate [--run NAME]` | Out-of-fold accuracy, precision, recall, F1, ROC-AUC, PR-AUC and confusion matrix: each window is scored by the fold model that never trained on it. `--checkpoint X --video-ids ...` scores one checkpoint on held-out videos. |
 | `wrestleai infer <video> [--threshold T]` | Per-window highlight probabilities (`outputs/<name>.windows.csv`) and merged highlight time ranges (`outputs/<name>.highlights.json`). |
@@ -105,6 +106,15 @@ Labels are `start_sec,end_sec,label` ranges. A window takes a range's label when
 covers at least `labels.overlap_threshold` (default 50%) of it; everything else is
 `non_highlight`. Set `labels.classes` to more names (e.g. `[none, takedown, pin]`) for
 multi-class technique labels.
+
+Labels for the 16 labeled matches are kept in [`labels/`](labels/) (one
+`<match>.labels.csv` per video, with notes). After labeling, refresh them with
+`wrestleai export-labels`. To rebuild the database from them on a new machine (with the
+videos in `match_directory/`):
+
+```bash
+wrestleai extract match_directory --labels-dir labels
+```
 
 To bring over labels made with the original Groot terminal labeler (read-only; the old
 database is not modified):
@@ -147,6 +157,7 @@ wrestling-highlight-detector/
 │   └── utils/                 # Logging, seeding, device, time parsing
 ├── configs/                   # default.yaml, test.yaml
 ├── scripts/                   # Synthetic data generator, legacy DB import
+├── labels/                    # Labeled ranges for every labeled match (CSV)
 ├── samples/                   # Small real sample clip + labels
 ├── tests/                     # pytest suite (one file per stage + end-to-end smoke test)
 ├── groot/                     # Original Groot data-processing scripts (reference)

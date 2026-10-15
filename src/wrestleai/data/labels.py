@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import csv
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 from wrestleai.data.windowing import Window
 
@@ -18,6 +18,7 @@ class LabelRange:
     start_sec: float
     end_sec: float
     label: str
+    notes: Optional[str] = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if self.end_sec <= self.start_sec:
@@ -68,7 +69,7 @@ def label_windows(
 
 
 def load_label_file(path: str | Path) -> List[LabelRange]:
-    """Read ranges from CSV (``start_sec,end_sec,label`` header) or JSON (list of objects)."""
+    """Read ranges from CSV (``start_sec,end_sec,label[,notes]`` header) or JSON (list of objects)."""
     path = Path(path)
     if path.suffix.lower() == ".json":
         with open(path, "r", encoding="utf-8") as fh:
@@ -76,15 +77,16 @@ def load_label_file(path: str | Path) -> List[LabelRange]:
     else:
         with open(path, "r", encoding="utf-8", newline="") as fh:
             rows = list(csv.DictReader(fh))
-    return [LabelRange(float(r["start_sec"]), float(r["end_sec"]), str(r["label"])) for r in rows]
+    return [LabelRange(float(r["start_sec"]), float(r["end_sec"]), str(r["label"]), r.get("notes") or None)
+            for r in rows]
 
 
 def save_label_file(ranges: Sequence[LabelRange], path: str | Path) -> None:
-    """Write ranges as CSV with a ``start_sec,end_sec,label`` header."""
+    """Write ranges as CSV with a ``start_sec,end_sec,label,notes`` header."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as fh:
         writer = csv.writer(fh)
-        writer.writerow(["start_sec", "end_sec", "label"])
+        writer.writerow(["start_sec", "end_sec", "label", "notes"])
         for r in ranges:
-            writer.writerow([f"{r.start_sec:.3f}", f"{r.end_sec:.3f}", r.label])
+            writer.writerow([f"{r.start_sec:.3f}", f"{r.end_sec:.3f}", r.label, r.notes or ""])

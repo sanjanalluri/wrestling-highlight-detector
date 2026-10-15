@@ -1,4 +1,4 @@
-"""Command-line entry point: ``wrestleai {label,extract,train,evaluate,infer}``."""
+"""Command-line entry point: ``wrestleai {label,extract,export-labels,train,evaluate,infer}``."""
 
 from __future__ import annotations
 
@@ -58,6 +58,14 @@ def build_parser() -> argparse.ArgumentParser:
                    help="write resampled copies at data.target_fps / data.resize for faster training")
     p.add_argument("--labeled-only", action="store_true", help="only build windows for videos with labels")
     p.add_argument("--no-import-labels", action="store_true", help="ignore sidecar <name>.labels.csv files")
+    p.add_argument("--labels-dir", type=Path, default=None,
+                   help="also import <name>.labels.csv files from this folder (e.g. labels/)")
+
+    p = sub.add_parser("export-labels", help="write every video's labeled ranges to <name>.labels.csv files",
+                       description="Export labeled ranges (with notes) from the database to one CSV per video, "
+                                   "e.g. to keep them in git. Re-import with `extract --labels-dir`.")
+    _add_common(p)
+    p.add_argument("--out", type=Path, default=Path("labels"), help="output folder (default: labels/)")
 
     p = sub.add_parser("train", help="k-fold cross-validated training",
                        description="Train with k-fold cross-validation over all labeled windows. Writes "
@@ -145,7 +153,16 @@ def cmd_extract(args: argparse.Namespace, cfg: Config) -> int:
         inputs.append(cfg.paths.video_dir)
     db = Database(cfg.paths.db_path)
     extract(db, cfg, inputs, convert=args.convert, labeled_only=args.labeled_only,
-            import_labels=not args.no_import_labels)
+            import_labels=not args.no_import_labels, labels_dir=args.labels_dir)
+    return 0
+
+
+def cmd_export_labels(args: argparse.Namespace, cfg: Config) -> int:
+    from wrestleai.data.extract import export_labels
+    from wrestleai.db.database import Database
+
+    written = export_labels(Database(cfg.paths.db_path), args.out)
+    logger.info("Wrote %d label files to %s", len(written), args.out)
     return 0
 
 
@@ -182,8 +199,8 @@ def cmd_infer(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
-COMMANDS = {"label": cmd_label, "extract": cmd_extract, "train": cmd_train,
-            "evaluate": cmd_evaluate, "infer": cmd_infer}
+COMMANDS = {"label": cmd_label, "extract": cmd_extract, "export-labels": cmd_export_labels,
+            "train": cmd_train, "evaluate": cmd_evaluate, "infer": cmd_infer}
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

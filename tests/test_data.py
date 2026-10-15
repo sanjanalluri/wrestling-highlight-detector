@@ -130,3 +130,28 @@ def test_dedup_drops_repeated_frames(synthetic_videos) -> None:
     frames, _ = extract_frames(synthetic_videos[0][0], 24.0, 0.0, 1.0)  # 2x upsampled
     keep = deduplicate(frames)
     assert len(frames) == 24 and len(keep) <= 13
+
+
+def test_label_export_round_trip(cfg, synthetic_videos, tmp_path) -> None:
+    from wrestleai.data.extract import export_labels
+
+    db = Database(cfg.paths.db_path)
+    video, _ = synthetic_videos[2]
+    (rec,) = extract(db, cfg, [video], import_labels=False)
+    db.add_label_range(rec.id, 1.0, 4.0, "highlight", notes="double leg, finish")
+    db.add_label_range(rec.id, 9.0, 12.5, "highlight")
+    (path,) = export_labels(db, tmp_path / "labels")
+    assert path.name == f"{video.stem}.labels.csv"
+    assert [(r.start_sec, r.end_sec, r.notes) for r in load_label_file(path)] == [
+        (1.0, 4.0, "double leg, finish"), (9.0, 12.5, None)]
+
+    # Re-importing into the same database adds nothing...
+    extract(db, cfg, labels_dir=tmp_path / "labels")
+    assert len(db.list_label_ranges(rec.id)) == 2
+    # ...and a fresh database rebuilt from the files gets identical windows.
+    fresh = Database(tmp_path / "fresh.db")
+    (rec2,) = extract(fresh, cfg, [video], labels_dir=tmp_path / "labels")
+    assert [(r.start_sec, r.end_sec, r.label, r.notes) for r in fresh.list_label_ranges(rec2.id)] == [
+        (1.0, 4.0, "highlight", "double leg, finish"), (9.0, 12.5, "highlight", None)]
+    assert [(w.start_sec, w.label) for w in fresh.list_clip_windows([rec2.id])] == [
+        (w.start_sec, w.label) for w in db.list_clip_windows([rec.id])]
