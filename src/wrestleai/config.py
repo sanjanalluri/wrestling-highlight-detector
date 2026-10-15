@@ -26,6 +26,7 @@ class PathsConfig:
     video_dir: str = "match_directory"
     processed_dir: str = "data/processed_videos"
     checkpoint_dir: str = "checkpoints"
+    feature_cache_dir: str = "data/feature_cache"
     output_dir: str = "outputs"
 
 
@@ -125,6 +126,10 @@ class TrainingConfig:
     group_by_video: bool = True  # keep all windows of a video in the same fold
     seed: int = 42
     num_workers: int = 0
+    # With a frozen backbone (and frozen/disabled segmentation), compute per-frame CNN
+    # features once, cache them under paths.feature_cache_dir, and train only the Bi-LSTM
+    # and classifier on them. Much faster on CPU; results are identical in expectation.
+    cache_features: bool = True
     device: str = "auto"  # "auto", "cpu", "cuda", "mps"
 
 

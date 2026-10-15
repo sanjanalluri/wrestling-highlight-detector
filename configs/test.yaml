@@ -6,6 +6,7 @@ paths:
   video_dir: data/synthetic/videos
   processed_dir: data/synthetic/processed_videos
   checkpoint_dir: data/synthetic/checkpoints
+  feature_cache_dir: data/synthetic/feature_cache
   output_dir: data/synthetic/outputs
 
 data:

@@ -36,6 +36,7 @@ def cfg(tmp_path: Path) -> Config:
             f"paths.video_dir={tmp_path / 'videos'}",
             f"paths.processed_dir={tmp_path / 'processed'}",
             f"paths.checkpoint_dir={tmp_path / 'checkpoints'}",
+            f"paths.feature_cache_dir={tmp_path / 'feature_cache'}",
             f"paths.output_dir={tmp_path / 'outputs'}",
         ],
     )

@@ -11,11 +11,11 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
-from wrestleai.data.dataset import WindowSample, make_dataloader
+from wrestleai.data.dataset import WindowSample
 from wrestleai.data.video import probe_video
 from wrestleai.data.windowing import Window, compute_windows
 from wrestleai.training.checkpoint import load_checkpoint
-from wrestleai.training.trainer import predict
+from wrestleai.training.trainer import score_samples
 from wrestleai.utils.runtime import resolve_device
 from wrestleai.utils.timefmt import format_time
 
@@ -91,7 +91,7 @@ def infer_video(
     if not windows:
         raise RuntimeError(f"Video too short for a single window: {video_path}")
     samples = [WindowSample(str(video_path), w.start_sec, w.end_sec) for w in windows]
-    probs = predict(model, make_dataloader(samples, cfg, shuffle=False, batch_size=cfg.inference.batch_size), device)
+    probs = score_samples(model, samples, cfg, device)
     positive = cfg.labels.classes.index(cfg.labels.positive_class)
     pos_probs = probs[:, positive]
     thr = cfg.inference.threshold if threshold is None else threshold

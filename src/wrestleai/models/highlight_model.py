@@ -48,13 +48,16 @@ class HighlightModel(nn.Module):
         masks = self.segmenter(frames)
         return apply_masks(frames, masks, self.mask_threshold, self.soft_mask)
 
+    def forward_features(self, features: torch.Tensor) -> torch.Tensor:
+        """Classify precomputed per-frame features ``(B, T, D)`` (stages 4-5 only)."""
+        return self.head(self.temporal(features))
+
     def forward(self, clips: torch.Tensor) -> torch.Tensor:
         if clips.dim() != 5:
             raise ValueError(f"expected (B, T, 3, H, W) clips, got {tuple(clips.shape)}")
         b, t = clips.shape[:2]
         frames = self.preprocess(clips.flatten(0, 1))
-        feats = self.features(frames).view(b, t, -1)
-        return self.head(self.temporal(feats))
+        return self.forward_features(self.features(frames).view(b, t, -1))
 
     @torch.no_grad()
     def predict_proba(self, clips: torch.Tensor) -> torch.Tensor:

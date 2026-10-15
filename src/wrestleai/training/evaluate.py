@@ -11,11 +11,11 @@ from typing import Any, Dict, List, Optional, Sequence
 import numpy as np
 
 from wrestleai.config import Config
-from wrestleai.data.dataset import make_dataloader, samples_from_db
+from wrestleai.data.dataset import samples_from_db
 from wrestleai.db.database import Database
 from wrestleai.training.checkpoint import load_checkpoint
 from wrestleai.training.metrics import compute_metrics, format_metrics
-from wrestleai.training.trainer import predict
+from wrestleai.training.trainer import score_samples
 from wrestleai.utils.runtime import resolve_device
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,7 @@ def evaluate_run(run_dir: str | Path, db: Database, device_name: str = "auto") -
     for path in fold_paths:
         model, cfg, ckpt = load_checkpoint(path, device)
         samples = samples_from_db(db, cfg, window_ids=ckpt["val_window_ids"])
-        probs = predict(model, make_dataloader(samples, cfg, shuffle=False, batch_size=cfg.inference.batch_size), device)
+        probs = score_samples(model, samples, cfg, device)
         y = np.array([s.label for s in samples])
         positive = cfg.labels.classes.index(cfg.labels.positive_class)
         fold_metrics = compute_metrics(y, probs, cfg.labels.classes, positive, cfg.inference.threshold)
@@ -90,7 +90,7 @@ def evaluate_checkpoint(
     overlap = sum(1 for s in samples if s.window_id in trained_on)
     if overlap:
         logger.warning("%d of %d evaluation windows were in this checkpoint's training set", overlap, len(samples))
-    probs = predict(model, make_dataloader(samples, cfg, shuffle=False, batch_size=cfg.inference.batch_size), device)
+    probs = score_samples(model, samples, cfg, device)
     y = np.array([s.label for s in samples])
     positive = cfg.labels.classes.index(cfg.labels.positive_class)
     metrics = compute_metrics(y, probs, cfg.labels.classes, positive, cfg.inference.threshold)

@@ -14,11 +14,12 @@ from typing import Any, Dict, List, Optional, Sequence
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 
 from wrestleai.config import Config, save_config
 from wrestleai.data.dataset import WindowSample, make_dataloader, samples_from_db
 from wrestleai.db.database import Database
+from wrestleai.features.cache import FeatureCache, uses_frozen_features
 from wrestleai.models.highlight_model import HighlightModel, build_model
 from wrestleai.training.checkpoint import LATEST_FILE, save_checkpoint
 from wrestleai.training.metrics import compute_metrics, format_metrics
@@ -45,6 +46,24 @@ def predict(model: HighlightModel, loader: DataLoader, device: torch.device) -> 
     for clips, _ in loader:
         out.append(torch.softmax(model(clips.to(device)), dim=-1).cpu().numpy())
     return np.concatenate(out) if out else np.zeros((0, model.head.num_classes))
+
+
+@torch.no_grad()
+def predict_features(model: HighlightModel, features: torch.Tensor, batch_size: int, device: torch.device) -> np.ndarray:
+    """Softmax probabilities ``(N, C)`` from precomputed features ``(N, T, D)``."""
+    model.eval()
+    out = [torch.softmax(model.forward_features(features[i:i + batch_size].to(device)), dim=-1).cpu().numpy()
+           for i in range(0, len(features), batch_size)]
+    return np.concatenate(out) if out else np.zeros((0, model.head.num_classes))
+
+
+def score_samples(model: HighlightModel, samples: Sequence[WindowSample], cfg: Config,
+                  device: torch.device) -> np.ndarray:
+    """Class probabilities for ``samples``, via the feature cache when the backbone is frozen."""
+    if uses_frozen_features(cfg):
+        feats = FeatureCache(cfg, model, device).window_features(samples)
+        return predict_features(model, feats, cfg.inference.batch_size, device)
+    return predict(model, make_dataloader(samples, cfg, shuffle=False, batch_size=cfg.inference.batch_size), device)
 
 
 class EarlyStopping:
@@ -98,8 +117,14 @@ def train_fold(
     fold: int,
     run_dir: Path,
     device: torch.device,
+    train_features: Optional[torch.Tensor] = None,
+    val_features: Optional[torch.Tensor] = None,
 ) -> FoldResult:
-    """Train one model on ``train_samples`` and keep the epoch best on ``val_samples``."""
+    """Train one model on ``train_samples`` and keep the epoch best on ``val_samples``.
+
+    With ``train_features``/``val_features`` (cached per-frame features), only the
+    temporal model and classifier are trained; otherwise clips are decoded every epoch.
+    """
     tc = cfg.training
     set_seed(tc.seed + fold)
     model = build_model(cfg).to(device)
@@ -110,9 +135,17 @@ def train_fold(
     if weight is not None:
         logger.info("Fold %d class weights: %s", fold, [round(float(w), 3) for w in weight])
     criterion = nn.CrossEntropyLoss(weight=weight)
-    train_loader = make_dataloader(train_samples, cfg, shuffle=True)
-    val_loader = make_dataloader(val_samples, cfg, shuffle=False)
+    cached = train_features is not None and val_features is not None
     val_y = np.array([s.label for s in val_samples])
+    if cached:
+        generator = torch.Generator().manual_seed(tc.seed + fold)
+        train_loader = DataLoader(TensorDataset(train_features, torch.tensor(train_labels)),
+                                  batch_size=tc.batch_size, shuffle=True, generator=generator)
+        forward = model.forward_features
+    else:
+        train_loader = make_dataloader(train_samples, cfg, shuffle=True)
+        val_loader = make_dataloader(val_samples, cfg, shuffle=False)
+        forward = model
     positive = cfg.labels.classes.index(cfg.labels.positive_class)
     stopper = EarlyStopping(tc.early_stopping_patience, tc.early_stopping_min_delta)
     ckpt_path = run_dir / f"fold_{fold}.pt"
@@ -122,16 +155,19 @@ def train_fold(
         start = time.time()
         model.train()
         running, seen = 0.0, 0
-        for clips, labels in train_loader:
-            clips, labels = clips.to(device), labels.to(device)
+        for inputs, labels in train_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad(set_to_none=True)
-            loss = criterion(model(clips), labels)
+            loss = criterion(forward(inputs), labels)
             loss.backward()
             optimizer.step()
             running += float(loss) * len(labels)
             seen += len(labels)
         train_loss = running / max(seen, 1)
-        probs = predict(model, val_loader, device)
+        if cached:
+            probs = predict_features(model, val_features, cfg.inference.batch_size, device)
+        else:
+            probs = predict(model, val_loader, device)
         val_loss = float(criterion(torch.log(torch.from_numpy(probs).float().clamp_min(1e-8)).to(device),
                                    torch.from_numpy(val_y).to(device)))
         metrics = compute_metrics(val_y, probs, cfg.labels.classes, positive, cfg.inference.threshold)
@@ -184,6 +220,13 @@ def run_training(
         dict(zip(cfg.labels.classes, np.bincount(labels, minlength=cfg.labels.num_classes).tolist())), device,
     )
     folds = make_folds(labels, groups, tc.k_folds, tc.seed, tc.group_by_video)
+    features: Optional[torch.Tensor] = None
+    if uses_frozen_features(cfg):
+        logger.info("Backbone is frozen: computing/loading cached per-frame features under %s",
+                    cfg.paths.feature_cache_dir)
+        started = time.time()
+        features = FeatureCache(cfg, build_model(cfg).to(device), device).window_features(samples)
+        logger.info("Features ready: %s in %.0fs", tuple(features.shape), time.time() - started)
     run_name = run_name or time.strftime("run-%Y%m%d-%H%M%S")
     run_dir = Path(cfg.paths.checkpoint_dir) / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -191,8 +234,11 @@ def run_training(
     results: List[FoldResult] = []
     for k, (train_idx, val_idx) in enumerate(folds):
         logger.info("=== Fold %d/%d: %d train / %d val windows ===", k + 1, len(folds), len(train_idx), len(val_idx))
-        results.append(train_fold(cfg, [samples[i] for i in train_idx], [samples[i] for i in val_idx],
-                                  k, run_dir, device))
+        results.append(train_fold(
+            cfg, [samples[i] for i in train_idx], [samples[i] for i in val_idx], k, run_dir, device,
+            None if features is None else features[train_idx],
+            None if features is None else features[val_idx],
+        ))
     keys = ["accuracy", "precision", "recall", "f1", "roc_auc", "pr_auc"]
     summary: Dict[str, Any] = {"run": run_name, "num_windows": len(samples), "folds": [], "mean": {}, "std": {}}
     for r in results:
