@@ -10,6 +10,7 @@ import torch.nn as nn
 
 from wrestleai.config import Config
 from wrestleai.features.cnn import FrameFeatureExtractor, build_feature_extractor
+from wrestleai.features.motion import MOTION_DIM
 from wrestleai.models.classifier import ClassifierHead
 from wrestleai.segmentation.deeplab import SilhouetteSegmenter, apply_masks, build_segmenter
 from wrestleai.temporal.bilstm import BiLSTMEncoder, build_temporal
@@ -32,8 +33,10 @@ class HighlightModel(nn.Module):
         segmenter: Optional[SilhouetteSegmenter] = None,
         mask_threshold: float = 0.5,
         soft_mask: bool = False,
+        motion: bool = False,
     ) -> None:
         super().__init__()
+        self.motion = motion
         self.segmenter = segmenter
         self.features = features
         self.temporal = temporal
@@ -53,6 +56,9 @@ class HighlightModel(nn.Module):
         return self.head(self.temporal(features))
 
     def forward(self, clips: torch.Tensor) -> torch.Tensor:
+        if self.motion:
+            raise RuntimeError("Motion features need consecutive frames; score clips through "
+                               "wrestleai.training.trainer.score_samples (cached-feature path) instead")
         if clips.dim() != 5:
             raise ValueError(f"expected (B, T, 3, H, W) clips, got {tuple(clips.shape)}")
         b, t = clips.shape[:2]
@@ -69,11 +75,13 @@ def build_model(cfg: Config) -> HighlightModel:
     """Assemble a :class:`HighlightModel` from config."""
     segmenter = build_segmenter(cfg.segmentation)
     features = build_feature_extractor(cfg.features)
-    temporal = build_temporal(cfg.temporal, features.out_dim)
+    motion_dim = MOTION_DIM if cfg.features.motion else 0
+    temporal = build_temporal(cfg.temporal, features.out_dim + motion_dim)
     head = ClassifierHead(temporal.out_dim, cfg.labels.num_classes, cfg.classifier.hidden_dims, cfg.classifier.dropout)
-    model = HighlightModel(features, temporal, head, segmenter, cfg.segmentation.threshold, cfg.segmentation.soft_mask)
+    model = HighlightModel(features, temporal, head, segmenter, cfg.segmentation.threshold, cfg.segmentation.soft_mask,
+                           motion=cfg.features.motion)
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
-    logger.info("Built HighlightModel: %d/%d trainable parameters, %d classes, segmentation=%s",
-                trainable, total, cfg.labels.num_classes, segmenter is not None)
+    logger.info("Built HighlightModel: %d/%d trainable parameters, %d classes, segmentation=%s, motion=%s",
+                trainable, total, cfg.labels.num_classes, segmenter is not None, cfg.features.motion)
     return model

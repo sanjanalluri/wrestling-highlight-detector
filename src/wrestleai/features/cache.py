@@ -169,7 +169,10 @@ class FeatureCache:
         return out
 
     def window_features(self, samples: Sequence[WindowSample]) -> torch.Tensor:
-        """Return float32 features ``(N, frames_per_window, D)`` for ``samples`` (in order)."""
+        """Return float32 features ``(N, frames_per_window, D)`` for ``samples`` (in order).
+
+        With ``features.motion``, the motion descriptors are appended (``D = CNN dim + MOTION_DIM``).
+        """
         fps, n = self.cfg.data.target_fps, self.cfg.data.frames_per_window
         indices = [window_frame_indices(s.start_sec, s.end_sec, fps, n) for s in samples]
         by_video: Dict[str, List[int]] = defaultdict(list)
@@ -187,4 +190,9 @@ class FeatureCache:
                 self._save(video, feats)
             for i in sample_ids:
                 result[i] = np.stack([feats[int(k)] for k in indices[i]])
-        return torch.from_numpy(np.stack(result).astype(np.float32))  # type: ignore[arg-type]
+        cnn = torch.from_numpy(np.stack(result).astype(np.float32))  # type: ignore[arg-type]
+        if not self.cfg.features.motion:
+            return cnn
+        from wrestleai.features.motion import MotionCache
+
+        return torch.cat([cnn, MotionCache(self.cfg).window_features(samples)], dim=-1)

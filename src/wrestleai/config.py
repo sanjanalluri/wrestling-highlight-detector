@@ -89,6 +89,10 @@ class FeaturesConfig:
     backbone: str = "efficientnet_b3"
     pretrained: bool = True
     freeze: bool = True
+    # Append optical-flow motion descriptors (camera motion removed) to each frame's
+    # CNN features. Requires the cached, frozen-feature path (see training.cache_features).
+    motion: bool = True
+    motion_size: Tuple[int, int] = (112, 112)  # (height, width) of the grayscale flow input
 
 
 @dataclass
@@ -181,6 +185,11 @@ class Config:
             raise ValueError("labels.overlap_threshold must be in (0, 1]")
         if t.k_folds < 2:
             raise ValueError("training.k_folds must be >= 2")
+        if self.features.motion:
+            seg_frozen = (not self.segmentation.enabled) or self.segmentation.freeze
+            if not (self.features.freeze and seg_frozen and t.cache_features):
+                raise ValueError("features.motion requires features.freeze, a frozen/disabled segmenter "
+                                 "and training.cache_features")
         if self.temporal.pooling not in {"mean", "last"}:
             raise ValueError("temporal.pooling must be 'mean' or 'last'")
 

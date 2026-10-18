@@ -109,3 +109,18 @@ def test_trained_backbone_is_kept_in_checkpoint(cfg, tmp_path) -> None:
     clips = torch.randn(1, cfg.data.frames_per_window, 3, *cfg.data.resize)
     with torch.no_grad():
         assert torch.allclose(load_checkpoint(tmp_path / "c.pt")[0](clips), model(clips), atol=1e-5)
+
+
+def test_checkpoint_from_before_motion_features_loads(cfg, tmp_path) -> None:
+    from wrestleai.models import build_model
+    from wrestleai.training.checkpoint import load_checkpoint
+
+    model = build_model(cfg).eval()
+    old_config = cfg.to_dict()
+    del old_config["features"]["motion"]  # as written by versions without motion features
+    torch.save({"model_state": model.state_dict(), "config": old_config}, tmp_path / "old.pt")
+    loaded, loaded_cfg, _ = load_checkpoint(tmp_path / "old.pt")
+    assert loaded_cfg.features.motion is False
+    clips = torch.randn(1, cfg.data.frames_per_window, 3, *cfg.data.resize)
+    with torch.no_grad():
+        assert torch.allclose(loaded(clips), model(clips), atol=1e-5)

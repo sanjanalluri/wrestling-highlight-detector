@@ -37,6 +37,8 @@ features:
   backbone: efficientnet_b3   # any timm model; B3 -> 1536-d per-frame features
   pretrained: true
   freeze: true
+  motion: true                # append optical-flow motion descriptors (needs cached frozen features)
+  motion_size: [112, 112]
 
 temporal:
   hidden_size: 384

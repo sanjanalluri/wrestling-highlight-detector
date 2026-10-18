@@ -57,6 +57,9 @@ def load_checkpoint(
     Returns ``(model_in_eval_mode, config, checkpoint_dict)``.
     """
     ckpt = torch.load(Path(path), map_location="cpu")
+    # Checkpoints saved before motion features existed have no "motion" key; they were
+    # trained without motion, regardless of today's default.
+    ckpt["config"].setdefault("features", {}).setdefault("motion", False)
     cfg = config_from_dict(ckpt["config"])
     excluded: List[str] = ckpt.get("excluded_prefixes", [])
     build_cfg = copy.deepcopy(cfg)

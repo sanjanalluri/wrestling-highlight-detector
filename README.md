@@ -134,6 +134,8 @@ the synthetic demo. Key settings:
 - `data`: 12 fps, 224×224 frames, 5 s windows, 2.5 s stride, 16 frames per window
 - `segmentation.enabled` (default `false`) and `segmentation.checkpoint`
 - `features.backbone` (any timm model, default `efficientnet_b3`) and `features.freeze`
+- `features.motion` (default `true`): append 35 camera-compensated optical-flow descriptors
+  per frame to the CNN features
 - `temporal`, `classifier`: Bi-LSTM and dense head sizes
 - `training`: `k_folds`, epochs, learning rate, class weighting, early stopping on `monitor`
 - `inference`: threshold, merge gap and minimum range length

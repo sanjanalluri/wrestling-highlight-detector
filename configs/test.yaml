@@ -28,6 +28,7 @@ features:
   backbone: resnet10t
   pretrained: false
   freeze: false
+  motion: false   # motion needs a frozen, cached backbone; this config trains the backbone
 
 temporal:
   hidden_size: 16
