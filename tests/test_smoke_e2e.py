@@ -55,3 +55,28 @@ def test_train_evaluate_infer_end_to_end(tmp_path: Path) -> None:
     assert (tmp_path / "out" / f"{pairs[1][0].stem}.windows.csv").exists()
 
     assert time.time() - started < 60, "smoke test should finish in under a minute on CPU"
+
+
+def test_analyze_run_script(tmp_path: Path) -> None:
+    import subprocess
+    import sys
+
+    videos = tmp_path / "videos"
+    make_synthetic_dataset(videos, num_videos=3, duration=12.0, fps=12.0, size=(64, 64), seed=4)
+    sets = ["--set", f"paths.db_path={tmp_path / 'a.db'}", "--set", f"paths.checkpoint_dir={tmp_path / 'ckpt'}",
+            "--set", f"paths.feature_cache_dir={tmp_path / 'cache'}", "--set", "training.epochs=1"]
+    common = ["--config", str(ROOT / "configs" / "test.yaml"), *sets, "--log-level", "WARNING"]
+    assert main(["extract", str(videos), *common]) == 0
+    assert main(["train", "--run-name", "one", *common]) == 0
+    assert main(["train", "--run-name", "two", *common, "--set", "training.seed=7"]) == 0
+    out = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "analyze_run.py"), "one", "two", "--bootstrap", "50",
+         "--config", str(ROOT / "configs" / "test.yaml"), *sets, "--json", str(tmp_path / "r.json")],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert "ranges found" in out and "two minus one" in out
+    report = json.loads((tmp_path / "r.json").read_text())
+    assert [r["run"] for r in report["runs"]] == ["one", "two"]
+    first = report["runs"][0]["thresholds"][0]
+    assert first["labeled"] > 0 and 0 <= first["found"] <= first["labeled"]
+    assert set(report["comparison"]["bootstrap"]) == {"roc_auc", "pr_auc"}
