@@ -1,216 +1,84 @@
-# Wrestling Highlight Detector - Groot Pipeline
+# Wrestling Highlight Detector
 
-A machine learning project to automatically detect highlights in wrestling matches using a sophisticated 4-stage deep learning pipeline.
+This project watches a full wrestling match and points out the moments worth putting in a highlight reel. You give it a match video, and it gives back a list of time ranges where something exciting probably happened, like a takedown, a reversal, a big throw, or a near fall.
 
-## Project Evolution
+Highlight reels are still mostly cut by hand. Someone has to scrub through a six or seven minute match to find the twenty seconds that matter. The goal here is to do that first pass automatically, so a person only has to review a short list of candidates instead of the whole match.
 
-### Phase 1: Live Filter (Legacy - Not Used)
-- Basic live vs non-live detection using manual labeling
-- Terminal-based range labeling tools
-- Database management system
-- **Note**: This implementation is preserved in `live_filter/` directory but is not part of the current Groot pipeline
+## How it works
 
-### Phase 2: Groot LSTM Pipeline (Current Focus)
-Advanced LSTM-based highlight detection with modular, testable components, implemented as the
-`wrestleai` Python package in `src/wrestleai/`. The original Groot data-processing scripts in
-`groot/` are kept for reference; their logic has been ported into the package.
+The model looks at a match in short overlapping windows and decides, one window at a time, whether it is a highlight.
 
-## Groot Pipeline Architecture
+1. **Break the video into windows.** Each match is resampled to 12 frames per second and split into five second windows that overlap by half. Sixteen frames are taken from each window.
+2. **Describe what each frame looks like.** Every frame goes through EfficientNet-B3, an image network pretrained on ImageNet, which turns the picture into a list of numbers describing what is in it.
+3. **Describe how things are moving.** Optical flow measures how pixels move from one frame to the next. Broadcast cameras pan and zoom constantly, so the overall camera movement is removed first, leaving the motion that comes from the wrestlers.
+4. **Read the window as a sequence.** A bidirectional LSTM reads the sixteen frames in order, so it can follow how an exchange builds and finishes instead of judging a single still image.
+5. **Make the call.** A small classifier turns that into a highlight probability, and neighboring windows that score high are merged into time ranges.
 
-The Groot pipeline is divided into modular, independently testable components:
+There is also an optional DeepLabV3+ stage that masks out everything except the wrestlers' silhouettes. It is built and tested but switched off for now, because it still needs to be trained on person segmentation data before its masks are useful.
 
-1. **Data Processing** - Video preprocessing and dataset preparation
-2. **Segmentation Model** (DeepLabV3+) - Extract wrestler silhouettes
-3. **2D CNN Feature Extractor** (EfficientNet-B3) - Extract per-frame features
-4. **Bi-LSTM Temporal Modeling** - Capture temporal patterns
-5. **Dense Classifier** - Final highlight/non-highlight classification
-6. **Connector** - `HighlightModel` chains stages 2–5 into one model
-7. **Training Phase** - k-fold cross-validated training with early stopping
-8. **Testing Phase** - Out-of-fold evaluation and video-level inference
+## My process
 
-```
-video ─► 12 fps frames ─► 5 s windows (2.5 s stride) ─► 16 frames/window
-      ─► [DeepLabV3+ silhouette mask] ─► EfficientNet-B3 (1536-d per frame)
-      ─► Bi-LSTM (2 layers, 384 hidden, bidirectional) ─► Dense 512 ─► 128 ─► classes
-```
+**Early experiments.** My first version, in the `live_filter/` folder, tried to separate live wrestling from stoppages and downtime using a 3D CNN on both video and audio. After that I tried motion detection and a 3D CNN aimed at highlights directly, in `highlights/`. Those versions are kept in the repository for reference, and the current pipeline grew out of what I learned from them.
 
-## Development Philosophy
+**Defining a highlight.** Before labeling anything I wrote down what counts. A clean takedown, an escape or reversal, a sustained pinning combination, a match ending move, or a failed attempt that leads to a real counter all count. Handfighting, resets, out of bounds, and downtime do not, even when they look busy. Keeping that definition fixed is what keeps the labels consistent from one match to the next.
 
-### Modular Development Approach
-- **Independent Testing**: Each component must work standalone before integration
-- **Incremental Progress**: No jumping to new parts until previous ones are guaranteed to work
-- **Sub-pipeline Validation**: Complex sub-components are tested at smaller scale first
-- **Elegant Problem Solving**: Address issues while working on smaller, modular components
-- **Error Prevention**: Avoid massive debugging sessions by catching issues early
+**Labeling.** I built a small terminal tool for marking time ranges while watching a match, then labeled 16 matches by hand, with a short note on most highlights (double leg, gutwrench, arm throw, and so on). I learned to keep each range tight around the actual action. Long ranges that included the setup and handfighting taught the model the wrong thing, and very short ones were too brief to count once the video was cut into windows.
 
-### Development Habits
-- Test each component thoroughly before moving to the next
-- Create comprehensive test cases for each module
-- Document any deviations or sub-pipeline complexities
-- Maintain clear separation of concerns between components
-- Use configuration files for easy parameter tuning
-- Implement proper logging and error handling at each stage
+**Building in stages.** Each part of the pipeline, from video processing to the classifier, was written and tested on its own before being connected to the next. The test suite runs without internet access or a GPU, and synthetic videos with known highlights let me check the whole pipeline end to end in seconds.
 
-## Quick Start
+**Making it practical on a laptop.** Running EfficientNet-B3 over every frame on every training pass would take hours on a CPU. Because that network is frozen, its output for a given frame never changes, so the features are computed once and cached. That brought a full training run down to about an hour, which made real experimentation possible.
+
+**Evaluating honestly.** Neighboring windows from the same match look almost identical, so testing on a match the model has already seen would make it look far better than it is. Every result comes from cross validation where each match stays entirely on the training side or entirely on the testing side. Plain accuracy is also misleading here, because most of a match is not a highlight and a model that always says "no" scores well. Instead I looked at how well the model ranks real highlights above everything else, how many labeled highlights it finds, and how many false alarms it raises per hour of footage.
+
+**Adding motion.** Highlights are mostly bursts of movement, and image features alone do not capture motion directly. Adding camera compensated optical flow helped the model find more of the labeled highlights without raising more false alarms, so it is now part of the default setup.
+
+## Where it stands
+
+The model has clearly learned something real. It ranks true highlights well above ordinary wrestling and catches a good share of them, but it still raises enough false alarms that its output works best as a shortlist for a person to review rather than a finished reel. Going from 10 to 16 labeled matches helped less than I expected, which suggests the approach itself, more than the amount of data, is the main limit right now. Next steps would include fine tuning the image network on wrestling footage, training the silhouette segmentation stage so the model focuses on the wrestlers, and labeling specific techniques like takedowns and pins instead of a single highlight label.
+
+## To Run
+
+Requires Python 3.9 or newer.
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
-pytest                             # 66 tests, ~20 s on CPU, fully offline
+pytest
 ```
 
-Requires Python 3.9+ (tested on 3.11). `requirements.txt` pins torch 2.2.x, the last release with Intel-macOS
-wheels; on other platforms torch/torchvision can be upgraded together. The older scripts in
-`live_filter/`, `highlights/` and `database/` use `requirements-legacy.txt`.
-
-### Try it on synthetic data (about 1–2 minutes on CPU)
+Try the full pipeline on small synthetic videos.
 
 ```bash
 python scripts/make_synthetic_data.py --out data/synthetic/videos
 wrestleai extract data/synthetic/videos --config configs/test.yaml
-wrestleai train    --config configs/test.yaml --run-name demo
+wrestleai train --config configs/test.yaml --run-name demo
 wrestleai evaluate --config configs/test.yaml
 wrestleai infer data/synthetic/videos/synthetic_match_03.mp4 --config configs/test.yaml
 ```
 
-The synthetic videos are toy data (fast-moving blobs during "highlights"). They show that
-every stage runs and that the model can learn, not how it performs on real wrestling.
-
-### Real sample clip
-
-`samples/` holds a 100 s, 1.3 MB excerpt of a real match with hand-labeled highlight ranges
-(see [`samples/README.md`](samples/README.md)):
+Run it on your own matches.
 
 ```bash
-wrestleai extract samples                       # 39 windows, 5 labeled highlight
-wrestleai label brynnsarah_sample.mp4 --list    # show the labeled ranges
-```
-
-## CLI
-
-All commands accept `--config <yaml>` (default `configs/default.yaml`), repeatable
-`--set section.key=value` overrides, `--log-level` and `--log-file`.
-
-| Command | What it does |
-|---|---|
-| `wrestleai extract <videos or dirs> [--convert]` | Probe videos with OpenCV, store them in SQLite, import `<name>.labels.csv` files found next to them, and slice each video into labeled windows. `--convert` writes 12 fps, 224×224 copies for faster training. With no inputs, re-windows every video already in the database. |
-| `wrestleai label <video>` | Interactive terminal labeler (`1:30 1:42 highlight # double leg`, `list`, `delete 2`, `play`, `done`). Non-interactive: `--add START END [LABEL]`, `--import file.csv`, `--list`. |
-| `wrestleai export-labels [--out labels]` | Write each video's labeled ranges (with notes) to `<name>.labels.csv`, e.g. to keep them in git. |
-| `wrestleai train [--run-name NAME]` | k-fold cross-validation over all labeled windows. Windows from the same video stay in one fold. Writes `fold_<k>.pt`, `best.pt`, `config.yaml` and `cv_summary.json` to `checkpoints/<run>/`. |
-| `wrestleai evaluate [--run NAME]` | Out-of-fold accuracy, precision, recall, F1, ROC-AUC, PR-AUC and confusion matrix: each window is scored by the fold model that never trained on it. `--checkpoint X --video-ids ...` scores one checkpoint on held-out videos. |
-| `wrestleai infer <video> [--threshold T]` | Per-window highlight probabilities (`outputs/<name>.windows.csv`) and merged highlight time ranges (`outputs/<name>.highlights.json`). |
-
-Labels are `start_sec,end_sec,label` ranges. A window takes a range's label when that range
-covers at least `labels.overlap_threshold` (default 50%) of it; everything else is
-`non_highlight`. Set `labels.classes` to more names (e.g. `[none, takedown, pin]`) for
-multi-class technique labels.
-
-Labels for the 16 labeled matches are kept in [`labels/`](labels/) (one
-`<match>.labels.csv` per video, with notes). After labeling, refresh them with
-`wrestleai export-labels`. To rebuild the database from them on a new machine (with the
-videos in `match_directory/`):
-
-```bash
-wrestleai extract match_directory --labels-dir labels
-```
-
-To bring over labels made with the original Groot terminal labeler (read-only; the old
-database is not modified):
-
-```bash
-python scripts/import_legacy_groot_db.py --legacy-db database/wrestling_pipeline.db
+wrestleai label match_directory/my_match.mp4
 wrestleai extract --labeled-only
+wrestleai train --run-name my-run
+wrestleai evaluate
+python scripts/analyze_run.py
+wrestleai infer match_directory/new_match.mp4
 ```
 
-## Configuration
+Settings live in `configs/default.yaml` and can be changed with `--set`, for example `--set training.epochs=20`.
 
-Every hyperparameter lives in [`configs/default.yaml`](configs/default.yaml), backed by
-typed dataclasses in `src/wrestleai/config.py` (unknown keys are rejected).
-[`configs/test.yaml`](configs/test.yaml) is a tiny CPU-only variant used by the tests and
-the synthetic demo. Key settings:
+## Repository layout
 
-- `data`: 12 fps, 224×224 frames, 5 s windows, 2.5 s stride, 16 frames per window
-- `segmentation.enabled` (default `false`) and `segmentation.checkpoint`
-- `features.backbone` (any timm model, default `efficientnet_b3`) and `features.freeze`
-- `features.motion` (default `true`): append 35 camera-compensated optical-flow descriptors
-  per frame to the CNN features
-- `temporal`, `classifier`: Bi-LSTM and dense head sizes
-- `training`: `k_folds`, epochs, learning rate, class weighting, early stopping on `monitor`
-- `inference`: threshold, merge gap and minimum range length
-
-## Project Structure
-
-```
-wrestling-highlight-detector/
-├── src/wrestleai/             # Groot pipeline package
-│   ├── config.py              # Typed YAML config
-│   ├── cli.py                 # `wrestleai` command
-│   ├── db/                    # SQLite: videos, label_ranges, clip_windows
-│   ├── data/                  # Stage 1: video I/O, windowing, label mapping, Dataset, dedup, synthetic data
-│   ├── labeling/              # Terminal range labeler
-│   ├── segmentation/          # Stage 2: DeepLabV3+ silhouette masking
-│   ├── features/              # Stage 3: EfficientNet-B3 per-frame features
-│   ├── temporal/              # Stage 4: Bi-LSTM
-│   ├── models/                # Stage 5: classifier head + HighlightModel
-│   ├── training/              # k-fold trainer, metrics, checkpoints, evaluation
-│   ├── inference/             # Window scoring and highlight-range merging
-│   └── utils/                 # Logging, seeding, device, time parsing
-├── configs/                   # default.yaml, test.yaml
-├── scripts/                   # Synthetic data generator, legacy DB import
-├── labels/                    # Labeled ranges for every labeled match (CSV)
-├── samples/                   # Small real sample clip + labels
-├── tests/                     # pytest suite (one file per stage + end-to-end smoke test)
-├── groot/                     # Original Groot data-processing scripts (reference)
-├── live_filter/               # Phase 1: Live vs Non-Live Detection (Legacy - Not Used)
-├── highlights/                # Earlier highlight detection (Legacy)
-├── database/                  # Legacy database management
-├── archives/                  # Old/utility scripts
-└── match_directory/           # Full match videos (not in git)
-```
-
-Generated files (`data/`, `checkpoints/`, `outputs/`, `*.db`) are git-ignored.
-
-## Current Status
-
-- **Working end to end:** data processing, labeling, all five model stages, k-fold
-  training, evaluation and inference, covered by 66 offline tests including an
-  end-to-end smoke test through the CLI.
-- **Labeled data:** 8 highlight ranges across 2 matches, far too few to train a useful
-  model. Labeling more matches is the main next step.
-- **Segmentation:** DeepLabV3+ only has an ImageNet-pretrained encoder. Its masks are not
-  meaningful until it is fine-tuned on person masks (e.g. the Kaggle person-segmentation
-  dataset), so it is disabled by default and warns if enabled without a checkpoint.
-- **Short labels:** with 5 s windows and a 50% overlap rule, labeled ranges of 2 s or less
-  never produce a highlight window. Shorter windows or a lower `labels.overlap_threshold`
-  would keep them.
-
-## Next Steps
-
-1. Label more matches (`wrestleai label`) and re-run `wrestleai extract --labeled-only`
-2. Fine-tune DeepLabV3+ on person-segmentation data and enable masking
-3. Cache per-frame CNN features so training with a frozen EfficientNet-B3 is fast on CPU
-4. Train on the full labeled set and evaluate on held-out matches
-5. Multi-class technique labels (takedown, sprawl, single leg, ...)
-
-## Database Schema
-
-### Groot Tables (`data/wrestleai.db`)
-- `videos` - Video path, FPS, frame count, resolution, duration, optional resampled copy
-- `label_ranges` - Labeled time ranges (`start_sec`, `end_sec`, `label`, labeler, notes)
-- `clip_windows` - Fixed windows per video and the label mapped onto each
-
-### Legacy Tables (`database/wrestling_pipeline.db`, not used by the package)
-- `original_matches`, `match_ranges`, `labels`: Phase 1 live filter
-- `groot_videos`, `groot_highlight_clips`: original Groot scripts (importable with
-  `scripts/import_legacy_groot_db.py`)
-
-## Development Guidelines
-
-- **Test First**: Always test components independently
-- **Document Changes**: Update this README with any pipeline modifications
-- **Modular Design**: Keep components loosely coupled
-- **Error Handling**: Implement robust error handling at each stage
-- **Configuration**: Use config files for easy parameter management
-- **Logging**: Maintain comprehensive logs for debugging 
+| Folder | What is in it |
+|---|---|
+| `src/wrestleai/` | The pipeline, organized by stage (data, segmentation, features, temporal, models, training, inference) |
+| `configs/` | Default settings and a small configuration used for tests |
+| `scripts/` | Synthetic data, run analysis, and importing older labels |
+| `labels/` | Hand labeled highlight ranges for 16 matches |
+| `samples/` | A short clip from a real match with its labels |
+| `tests/` | Tests for every stage plus full end to end runs |
+| `live_filter/`, `highlights/`, `groot/`, `database/`, `archives/` | Earlier experiments, kept for reference |
